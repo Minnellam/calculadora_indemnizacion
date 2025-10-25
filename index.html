@@ -9,26 +9,51 @@
     <!-- LIBRERÍA PDF (CARGA GLOBAL) -->
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
-    <!-- Librerías de Firebase (Importaciones individuales para scripts NO modulares) -->
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"></script>
+    <!-- Librerías de Firebase (Carga Global: Versiones que exponen 'firebase' globalmente) -->
+    <!-- NOTA: Usamos rutas específicas que funcionan en navegadores modernos sin 'type="module"' -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore-compat.js"></script>
 
 
     <!-- Lógica de la Aplicación: Eliminamos 'type="module"' para acceder a window.jsPDF -->
     <script>
-        // Funciones de Firebase importadas globalmente
-        const { initializeApp } = firebase;
-        const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } = firebase.auth;
-        const { getFirestore, doc, onSnapshot, collection, query, addDoc, getDocs, where, limit, setLogLevel } = firebase.firestore;
+        // Referencias a funciones de Firebase API V8 (globalmente disponibles)
+        // NOTA: Estas son las funciones que se encuentran disponibles en la versión 8.10.0
+        const initializeApp = firebase.initializeApp;
+        const getAuth = firebase.auth;
+        const signInAnonymously = firebase.auth().signInAnonymously;
+        const signInWithCustomToken = firebase.auth().signInWithCustomToken;
+        const onAuthStateChanged = firebase.auth().onAuthStateChanged;
+        const signOut = firebase.auth().signOut;
+        const getFirestore = firebase.firestore;
         
-        // El setLogLevel debe ir después de cargar firebase-firestore.js
-        if (typeof setLogLevel !== 'undefined') {
-            setLogLevel('debug');
-        } else {
-             // Fallback si setLogLevel no está disponible globalmente
-             console.warn("Firebase setLogLevel not defined globally.");
-        }
+        // Funciones de Firestore (V8 style, sin usar la desestructuración de V9)
+        const collection = (db, path) => db.collection(path);
+        const doc = (db, path, docId) => db.collection(path).doc(docId);
+        const query = (colRef, ...constraints) => {
+            let q = colRef;
+            constraints.forEach(constraint => {
+                if (constraint.type === 'where') q = q.where(constraint.field, constraint.op, constraint.value);
+                if (constraint.type === 'limit') q = q.limit(constraint.value);
+            });
+            return q;
+        };
+        const where = (field, op, value) => ({ type: 'where', field, op, value });
+        const limit = (val) => ({ type: 'limit', value: val });
+        
+        // onSnapshot, addDoc, getDocs requieren llamadas asíncronas específicas
+        const onSnapshot = (q, callback, errorCallback) => q.onSnapshot(snapshot => {
+            const docs = snapshot.docs.map(d => ({ id: d.id, data: () => d.data() }));
+            callback({ empty: snapshot.empty, docs });
+        }, errorCallback);
+
+        const addDoc = (colRef, data) => colRef.add(data);
+        const getDocs = async (q) => {
+            const snapshot = await q.get();
+            return { empty: snapshot.empty, docs: snapshot.docs };
+        };
 
 
         // Configuraciones de entorno
@@ -65,7 +90,8 @@
         };
 
         // Esta función solo se usará si 'db' está inicializado
-        const getLiquidationCollectionRef = () => collection(db, `artifacts/${appId}/users/${currentUser.uid}/liquidations`);
+        // Importante: En V8, collection se obtiene directamente de db.collection(path)
+        const getLiquidationCollectionRef = () => db.collection(`artifacts/${appId}/users/${currentUser.uid}/liquidations`);
 
         // --- AUTH & UI LOGIC ---
         const handleAuth = async () => {
@@ -83,21 +109,23 @@
             
             // Modo Canvas / Producción: Inicializar Firebase
             try {
+                // Usamos la inicialización global V8
                 app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
+                auth = getAuth().getAuth();
+                db = getFirestore().firestore();
                 
                 if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
+                    await getAuth().signInWithCustomToken(initialAuthToken);
                 } else {
-                    await signInAnonymously(auth);
+                    await getAuth().signInAnonymously();
                 }
             } catch (error) {
                 console.error("Firebase Init Error:", error);
                 showModal("Error de Inicialización", "No se pudo conectar a la base de datos. Verifique su conexión o las credenciales de Firebase.");
             }
             
-            onAuthStateChanged(auth, async (user) => {
+            // onAuthStateChanged se usa desde el objeto auth devuelto por firebase.auth()
+            getAuth().onAuthStateChanged(async (user) => {
                 if (user) {
                     currentUser = user;
                     document.getElementById('auth-screen').classList.add('hidden');
@@ -116,8 +144,8 @@
             
             showSpinner(true);
             try {
-                await signOut(auth);
-                await signInAnonymously(auth); 
+                await getAuth().signOut();
+                await getAuth().signInAnonymously(); 
             } catch (error) {
                 console.error("Logout Error:", error);
             }
@@ -412,7 +440,8 @@
             const historyBody = document.getElementById('history-table-body');
             historyBody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-gray-500">Cargando historial...</td></tr>';
 
-            const q = query(getLiquidationCollectionRef(), limit(50));
+            // Nota: En V8, query sobre una colección devuelve la colección misma (ColRef) para luego llamar a .get() o .onSnapshot()
+            const q = getLiquidationCollectionRef().limit(50);
             
             onSnapshot(q, (snapshot) => {
                 historyBody.innerHTML = '';
@@ -421,7 +450,7 @@
                     return;
                 }
 
-                snapshot.forEach((doc) => {
+                snapshot.docs.forEach((doc) => {
                     const data = doc.data();
                     const row = historyBody.insertRow();
                     row.className = 'hover:bg-gray-50 transition duration-150';
@@ -449,15 +478,15 @@
                     return;
                 }
                 
-                // Nota: Usamos getDocs en el path de la colección para simular la obtención del documento
-                const docRef = doc(db, `artifacts/${appId}/users/${currentUser.uid}/liquidations`, docId);
-                const docSnapshot = await getDocs(query(collection(db, docRef.path), where('__name__', '==', docId), limit(1)));
+                // Nota: En V8, se obtiene la referencia al documento y se llama a .get()
+                const docRef = getLiquidationCollectionRef().doc(docId);
+                const docSnapshot = await docRef.get();
                 
-                if (docSnapshot.empty) {
+                if (!docSnapshot.exists) {
                     showModal("Error", "Documento no encontrado.");
                     return;
                 }
-                const data = docSnapshot.docs[0].data();
+                const data = docSnapshot.data();
 
                 const content = `
                     <p class="mb-2"><strong>Trabajador:</strong> ${data.workerName} (${data.workerDni})</p>
@@ -814,5 +843,6 @@
 
 </body>
 </html>
+
 
 
