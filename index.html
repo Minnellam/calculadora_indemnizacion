@@ -9,69 +9,32 @@
     <!-- LIBRERÍA PDF (CARGA GLOBAL) -->
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
-    <!-- Librerías de Firebase (Carga Global: Versiones que exponen 'firebase' globalmente) -->
-    <!-- NOTA: Usamos rutas específicas que funcionan en navegadores modernos sin 'type="module"' -->
+    <!-- Librerías de Firebase (Carga Global V8: Exponen el objeto 'firebase') -->
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore-compat.js"></script>
+    <!-- firebase-firestore-compat.js ya no es necesario, lo eliminamos. -->
 
 
-    <!-- Lógica de la Aplicación: Eliminamos 'type="module"' para acceder a window.jsPDF -->
+    <!-- Lógica de la Aplicación: Script tradicional para acceder a global 'firebase' y 'window.jsPDF' -->
     <script>
-        // Referencias a funciones de Firebase API V8 (globalmente disponibles)
-        // NOTA: Estas son las funciones que se encuentran disponibles en la versión 8.10.0
-        const initializeApp = firebase.initializeApp;
-        const getAuth = firebase.auth;
-        const signInAnonymously = firebase.auth().signInAnonymously;
-        const signInWithCustomToken = firebase.auth().signInWithCustomToken;
-        const onAuthStateChanged = firebase.auth().onAuthStateChanged;
-        const signOut = firebase.auth().signOut;
-        const getFirestore = firebase.firestore;
-        
-        // Funciones de Firestore (V8 style, sin usar la desestructuración de V9)
-        const collection = (db, path) => db.collection(path);
-        const doc = (db, path, docId) => db.collection(path).doc(docId);
-        const query = (colRef, ...constraints) => {
-            let q = colRef;
-            constraints.forEach(constraint => {
-                if (constraint.type === 'where') q = q.where(constraint.field, constraint.op, constraint.value);
-                if (constraint.type === 'limit') q = q.limit(constraint.value);
-            });
-            return q;
-        };
-        const where = (field, op, value) => ({ type: 'where', field, op, value });
-        const limit = (val) => ({ type: 'limit', value: val });
-        
-        // onSnapshot, addDoc, getDocs requieren llamadas asíncronas específicas
-        const onSnapshot = (q, callback, errorCallback) => q.onSnapshot(snapshot => {
-            const docs = snapshot.docs.map(d => ({ id: d.id, data: () => d.data() }));
-            callback({ empty: snapshot.empty, docs });
-        }, errorCallback);
-
-        const addDoc = (colRef, data) => colRef.add(data);
-        const getDocs = async (q) => {
-            const snapshot = await q.get();
-            return { empty: snapshot.empty, docs: snapshot.docs };
-        };
-
-
-        // Configuraciones de entorno
+        // Configuraciones de entorno (Mantenemos la estructura para compatibilidad)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfigRaw = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
         const firebaseConfig = JSON.parse(firebaseConfigRaw);
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null; 
         
-        // Variables de la aplicación
+        // Variables de la aplicación (Almacenarán las instancias de servicio)
         let app = null;
-        let db = null;
-        let auth = null;
+        let db = null; // Instancia de Firestore (V8)
+        let auth = null; // Instancia de Auth (V8)
         let currentUser = { uid: 'local_user' };
         let currentLiquidationResult = null;
         
         // Determina si estamos en modo local sin configuración de Firebase
         const isLocalMode = !firebaseConfig.apiKey; 
 
+        // --- UTILS UI ---
         const showSpinner = (show) => {
             document.getElementById('loading-spinner').classList.toggle('hidden', !show);
         };
@@ -88,9 +51,12 @@
         const hideModal = () => {
             document.getElementById('modal').classList.add('hidden');
         };
+        
+        const formatCurrency = (amount) => {
+            return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(amount);
+        };
 
-        // Esta función solo se usará si 'db' está inicializado
-        // Importante: En V8, collection se obtiene directamente de db.collection(path)
+        // Esta función devuelve la referencia de la colección (V8 method)
         const getLiquidationCollectionRef = () => db.collection(`artifacts/${appId}/users/${currentUser.uid}/liquidations`);
 
         // --- AUTH & UI LOGIC ---
@@ -98,34 +64,39 @@
             showSpinner(true);
             
             if (isLocalMode) {
-                // Modo local: Simplemente saltamos la inicialización de Firebase
+                // Modo local
                 document.getElementById('auth-screen').classList.add('hidden');
                 document.getElementById('main-app').classList.remove('hidden');
                 document.getElementById('user-info').innerText = `ID de Sesión: MODO LOCAL`;
-                loadHistory(); // Mostrará el mensaje de desactivación
+                loadHistory(); 
                 showSpinner(false);
                 return;
             }
             
-            // Modo Canvas / Producción: Inicializar Firebase
+            // Modo Canvas / Producción: Inicializar Firebase (V8 Logic)
             try {
-                // Usamos la inicialización global V8
-                app = initializeApp(firebaseConfig);
-                auth = getAuth().getAuth();
-                db = getFirestore().firestore();
+                // 1. Initialize App (V8)
+                app = firebase.initializeApp(firebaseConfig);
                 
+                // 2. Get Service Instances (V8)
+                auth = app.auth();
+                db = app.firestore();
+                db.settings({ timestampsInSnapshots: true }); // Práctica recomendada V8
+
+                // 3. Sign In
                 if (initialAuthToken) {
-                    await getAuth().signInWithCustomToken(initialAuthToken);
+                    await auth.signInWithCustomToken(initialAuthToken);
                 } else {
-                    await getAuth().signInAnonymously();
+                    await auth.signInAnonymously();
                 }
             } catch (error) {
                 console.error("Firebase Init Error:", error);
-                showModal("Error de Inicialización", "No se pudo conectar a la base de datos. Verifique su conexión o las credenciales de Firebase.");
+                showModal("Error de Inicialización", "No se pudo conectar a la base de datos o autenticar. Verifique la consola para detalles.");
+                return; // Detener si falla la inicialización/auth
             }
             
-            // onAuthStateChanged se usa desde el objeto auth devuelto por firebase.auth()
-            getAuth().onAuthStateChanged(async (user) => {
+            // 4. Set up Auth State Observer
+            auth.onAuthStateChanged(async (user) => {
                 if (user) {
                     currentUser = user;
                     document.getElementById('auth-screen').classList.add('hidden');
@@ -140,18 +111,18 @@
         };
 
         const handleLogout = async () => {
-            if (isLocalMode) return; // No hay sesión para cerrar en modo local
+            if (isLocalMode || !auth) return; 
             
             showSpinner(true);
             try {
-                await getAuth().signOut();
-                await getAuth().signInAnonymously(); 
+                await auth.signOut();
+                await auth.signInAnonymously(); // Vuelve a iniciar sesión anónima
             } catch (error) {
                 console.error("Logout Error:", error);
             }
         };
         // --- END AUTH LOGIC ---
-
+        
         // --- CÁLCULO DE ANTIGÜEDAD Y DÍAS TRABAJADOS ---
         const getDaysInYear = (year) => (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 366 : 365;
         
@@ -217,9 +188,6 @@
             };
         };
 
-        const formatCurrency = (amount) => {
-            return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(amount);
-        };
 
         // --- CÁLCULO DE RUBROS Y MULTAS ---
         const calculateSeverance = () => {
@@ -398,9 +366,7 @@
                 showModal("Error", "Debe calcular la liquidación primero.");
                 return;
             }
-            // Si db es nulo, estamos en modo local.
             if (!db) {
-                // Si estamos en local (sin DB), notificamos, pero permitimos la descarga del PDF.
                 console.warn("Firestore is not active in local mode. History not saved.");
                 return;
             }
@@ -418,13 +384,12 @@
                     cct,
                     savedAt: new Date().toISOString()
                 };
-
-                await addDoc(getLiquidationCollectionRef(), dataToSave);
+                // V8 syntax for adding document
+                await getLiquidationCollectionRef().add(dataToSave);
                 loadHistory();
 
             } catch (error) {
                 console.error("Error saving liquidation:", error);
-                // No mostrar modal de error para no interferir con la descarga del PDF
             } finally {
                 showSpinner(false);
             }
@@ -440,10 +405,10 @@
             const historyBody = document.getElementById('history-table-body');
             historyBody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-gray-500">Cargando historial...</td></tr>';
 
-            // Nota: En V8, query sobre una colección devuelve la colección misma (ColRef) para luego llamar a .get() o .onSnapshot()
+            // V8 syntax for query and snapshot
             const q = getLiquidationCollectionRef().limit(50);
             
-            onSnapshot(q, (snapshot) => {
+            q.onSnapshot((snapshot) => {
                 historyBody.innerHTML = '';
                 if (snapshot.empty) {
                     historyBody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-gray-500">No hay liquidaciones guardadas.</td></tr>';
@@ -472,13 +437,12 @@
         const viewDetails = async (docId) => {
             showSpinner(true);
             try {
-                // Si db es nulo, no podemos ver detalles.
                 if (!db) {
                     showModal("Atención", "No se puede ver el detalle.", "La base de datos (Firestore) no está activa en modo local.", 'info');
                     return;
                 }
                 
-                // Nota: En V8, se obtiene la referencia al documento y se llama a .get()
+                // V8 syntax for getting document
                 const docRef = getLiquidationCollectionRef().doc(docId);
                 const docSnapshot = await docRef.get();
                 
@@ -524,16 +488,13 @@
 
         // --- GENERACIÓN DE PDF ---
         const generatePDF = () => {
-            // Referenciamos la librería de forma directa desde el scope global
             const PDFConstructor = window.jsPDF;
             
-            // 1. Verificar si la liquidación fue calculada.
             if (!currentLiquidationResult) {
                 showModal("Error", "Debe calcular la liquidación primero.", "Presione el botón 'CALCULAR LIQUIDACIÓN' antes de intentar generar el PDF.");
                 return;
             }
 
-            // 2. Verificar si la librería jsPDF está disponible globalmente.
             if (!PDFConstructor) {
                 showModal("Error", "Librería de PDF no disponible", "La librería de generación de PDF (jsPDF) no se cargó correctamente. Intente recargar la página o verificar su conexión.", 'error');
                 return;
@@ -843,6 +804,8 @@
 
 </body>
 </html>
+
+
 
 
 
