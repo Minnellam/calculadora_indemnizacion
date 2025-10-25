@@ -6,7 +6,7 @@
     <title>Calculadora de Indemnizaciones Laborales (Argentina)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- LIBRERÍA PDF (CARGA GLOBAL para mayor compatibilidad, PERO se referenciará de forma asíncrona) -->
+    <!-- LIBRERÍA PDF (CARGA GLOBAL) -->
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
     <!-- Lógica de la Aplicación: Mantenemos 'type="module"' con Firebase V9 -->
@@ -493,9 +493,10 @@
 
         // --- GENERACIÓN DE PDF ---
         const generatePDF = async () => {
-            // Utilizamos la importación asíncrona para forzar la carga en el ámbito del módulo
-            const { jsPDF } = await import("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
-            const PDFConstructor = jsPDF;
+            // Referenciamos directamente el objeto global creado por el CDN
+            // Se debe acceder a window.jspdf.jsPDF, ya que es el constructor expuesto por el UMD
+            const jsPDFModule = window.jspdf;
+            const PDFConstructor = jsPDFModule ? jsPDFModule.jsPDF : null;
             
             if (!currentLiquidationResult) {
                 showModal("Error", "Debe calcular la liquidación primero.", "Presione el botón 'CALCULAR LIQUIDACIÓN' antes de intentar generar el PDF.");
@@ -503,7 +504,7 @@
             }
 
             if (!PDFConstructor) {
-                showModal("Error", "Librería de PDF no disponible", "No se pudo cargar la librería jsPDF. Esto puede ser un problema de red o de compatibilidad del navegador.", 'error');
+                showModal("Error", "Librería de PDF no disponible", "La librería jsPDF no se cargó o no está disponible en este navegador. Por favor, recargue la página o revise la consola para errores de red.", 'error');
                 return;
             }
 
