@@ -6,17 +6,30 @@
     <title>Calculadora de Indemnizaciones Laborales (Argentina)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- LIBRERÍA PDF (CARGA GLOBAL para mayor compatibilidad local) -->
+    <!-- LIBRERÍA PDF (CARGA GLOBAL) -->
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
-    <!-- Librerías de Firebase y Lógica de la Aplicación -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection, query, addDoc, getDocs, where, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    <!-- Librerías de Firebase (Importaciones individuales para scripts NO modulares) -->
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"></script>
+
+
+    <!-- Lógica de la Aplicación: Eliminamos 'type="module"' para acceder a window.jsPDF -->
+    <script>
+        // Funciones de Firebase importadas globalmente
+        const { initializeApp } = firebase;
+        const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } = firebase.auth;
+        const { getFirestore, doc, onSnapshot, collection, query, addDoc, getDocs, where, limit, setLogLevel } = firebase.firestore;
         
-        setLogLevel('debug');
+        // El setLogLevel debe ir después de cargar firebase-firestore.js
+        if (typeof setLogLevel !== 'undefined') {
+            setLogLevel('debug');
+        } else {
+             // Fallback si setLogLevel no está disponible globalmente
+             console.warn("Firebase setLogLevel not defined globally.");
+        }
+
 
         // Configuraciones de entorno
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -30,8 +43,6 @@
         let auth = null;
         let currentUser = { uid: 'local_user' };
         let currentLiquidationResult = null;
-        // NOTA: Se ha eliminado la variable jsPDFConstructor de inicialización temprana.
-        // Se accederá a window.jsPDF directamente dentro de generatePDF.
         
         // Determina si estamos en modo local sin configuración de Firebase
         const isLocalMode = !firebaseConfig.apiKey; 
@@ -361,7 +372,8 @@
             }
             // Si db es nulo, estamos en modo local.
             if (!db) {
-                showModal("Atención", "No se pudo guardar el historial.", "La base de datos (Firestore) no está activa porque la aplicación se está ejecutando en modo local sin una configuración de Firebase. La funcionalidad principal (cálculo y PDF) funciona correctamente.", 'info');
+                // Si estamos en local (sin DB), notificamos, pero permitimos la descarga del PDF.
+                console.warn("Firestore is not active in local mode. History not saved.");
                 return;
             }
 
@@ -380,15 +392,11 @@
                 };
 
                 await addDoc(getLiquidationCollectionRef(), dataToSave);
-                
-                // No mostramos el modal de guardado para no interferir con la descarga del PDF
-                // showModal("Guardado Exitoso", `La liquidación para ${workerName} ha sido guardada en la Base de Datos (Firestore).`, 'info');
-
                 loadHistory();
 
             } catch (error) {
                 console.error("Error saving liquidation:", error);
-                showModal("Error de Guardado", `Hubo un error al guardar la liquidación: ${error.message}`);
+                // No mostrar modal de error para no interferir con la descarga del PDF
             } finally {
                 showSpinner(false);
             }
@@ -498,7 +506,7 @@
 
             // 2. Verificar si la librería jsPDF está disponible globalmente.
             if (!PDFConstructor) {
-                showModal("Error", "Librería de PDF no disponible", "La librería de generación de PDF (jsPDF) no se cargó correctamente. Esto puede suceder por problemas de red o porque la ejecución local no la encuentra. Intente recargar la aplicación.", 'error');
+                showModal("Error", "Librería de PDF no disponible", "La librería de generación de PDF (jsPDF) no se cargó correctamente. Intente recargar la página o verificar su conexión.", 'error');
                 return;
             }
 
@@ -806,4 +814,5 @@
 
 </body>
 </html>
+
 
