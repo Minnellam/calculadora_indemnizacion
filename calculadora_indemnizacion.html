@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora de Indemnizaciones Laborales (Argentina)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- LIBRERÍA PDF (CARGA GLOBAL para mayor compatibilidad local) -->
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+    <!-- Librerías de Firebase y Lógica de la Aplicación -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, query, addDoc, getDocs, where, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        setLogLevel('debug');
+
+        // Configuraciones de entorno
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfigRaw = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+        const firebaseConfig = JSON.parse(firebaseConfigRaw);
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null; 
+        
+        // Variables de la aplicación
+        let app = null;
+        let db = null;
+        let auth = null;
+        let currentUser = { uid: 'local_user' };
+        let currentLiquidationResult = null;
+        // NOTA: Se ha eliminado la variable jsPDFConstructor de inicialización temprana.
+        // Se accederá a window.jsPDF directamente dentro de generatePDF.
+        
+        // Determina si estamos en modo local sin configuración de Firebase
+        const isLocalMode = !firebaseConfig.apiKey; 
+
+        const showSpinner = (show) => {
+            document.getElementById('loading-spinner').classList.toggle('hidden', !show);
+        };
+
+        const showModal = (title, content, type = 'error') => {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-content').innerHTML = content;
+            const titleElement = document.getElementById('modal-title');
+            titleElement.classList.toggle('text-red-600', type === 'error');
+            titleElement.classList.toggle('text-blue-600', type === 'info');
+            document.getElementById('modal').classList.remove('hidden');
+        };
+
+        const hideModal = () => {
+            document.getElementById('modal').classList.add('hidden');
+        };
+
+        // Esta función solo se usará si 'db' está inicializado
+        const getLiquidationCollectionRef = () => collection(db, `artifacts/${appId}/users/${currentUser.uid}/liquidations`);
+
+        // --- AUTH & UI LOGIC ---
+        const handleAuth = async () => {
+            showSpinner(true);
+            
+            if (isLocalMode) {
+                // Modo local: Simplemente saltamos la inicialización de Firebase
+                document.getElementById('auth-screen').classList.add('hidden');
+                document.getElementById('main-app').classList.remove('hidden');
+                document.getElementById('user-info').innerText = `ID de Sesión: MODO LOCAL`;
+                loadHistory(); // Mostrará el mensaje de desactivación
+                showSpinner(false);
+                return;
+            }
+            
+            // Modo Canvas / Producción: Inicializar Firebase
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Firebase Init Error:", error);
+                showModal("Error de Inicialización", "No se pudo conectar a la base de datos. Verifique su conexión o las credenciales de Firebase.");
+            }
+            
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    currentUser = user;
+                    document.getElementById('auth-screen').classList.add('hidden');
+                    document.getElementById('main-app').classList.remove('hidden');
+                    const displayId = user.isAnonymous ? 'Anónimo' : `${currentUser.uid.substring(0, 8)}...`;
+                    document.getElementById('user-info').innerText = `ID de Sesión: ${displayId}`;
+                    loadHistory();
+                } else {
+                    showSpinner(false);
+                }
+            });
+        };
+
+        const handleLogout = async () => {
+            if (isLocalMode) return; // No hay sesión para cerrar en modo local
+            
+            showSpinner(true);
+            try {
+                await signOut(auth);
+                await signInAnonymously(auth); 
+            } catch (error) {
+                console.error("Logout Error:", error);
+            }
+        };
+        // --- END AUTH LOGIC ---
+
+        // --- CÁLCULO DE ANTIGÜEDAD Y DÍAS TRABAJADOS ---
+        const getDaysInYear = (year) => (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 366 : 365;
+        
+        /**
+         * Determina los días de vacaciones base según la antigüedad cumplida.
+         * @param {number} completedYears - Años de servicio real completos.
+         * @returns {number} Días de vacaciones base.
+         */
+        const getBaseVacationDays = (completedYears) => {
+            if (completedYears >= 20) return 35;
+            if (completedYears >= 10) return 28;
+            if (completedYears >= 5) return 21;
+            if (completedYears >= 0.5) return 14; 
+            return 0; 
+        };
+
+        const calculateAntiquity = (startDate, endDate) => {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+
+            let years = end.getFullYear() - start.getFullYear();
+            let months = end.getMonth() - start.getMonth();
+            let days = end.getDate() - start.getDate();
+
+            if (days < 0) {
+                months--;
+                days += new Date(end.getFullYear(), end.getMonth(), 0).getDate();
+            }
+
+            if (months < 0) {
+                years--;
+                months += 12;
+            }
+
+            // Días trabajados en el AÑO de egreso (para Vacaciones)
+            const startOfYear = new Date(end.getFullYear(), 0, 1);
+            // Redondeo hacia arriba para asegurar que el último día se cuenta.
+            const daysInYear = Math.ceil((end - startOfYear) / (1000 * 60 * 60 * 24)) + 1; 
+            
+            // Días trabajados en el SEMESTRE de egreso (para SAC)
+            const semesterStartMonth = (end.getMonth() + 1 <= 6) ? 0 : 6;
+            const startOfSemester = new Date(end.getFullYear(), semesterStartMonth, 1);
+            const daysInSemester = Math.ceil((end - startOfSemester) / (1000 * 60 * 60 * 24)) + 1; // +1 para incluir el último día
+
+            // Regla del art. 245 LCT (Antigüedad Computable para Indemnización)
+            // Se cuenta 1 año de indemnización por cada año completo de servicio o fracción mayor a 3 meses.
+            let yearsForIndemnity = years;
+            if (months > 3 || (months === 3 && days >= 1)) { // Fracción mayor a 3 meses (e.g., 1 año y 4 meses = 2 años)
+                yearsForIndemnity++;
+            }
+            // Si la antigüedad total es menor a 3 meses y no se cumple la fracción, el mínimo es 1 año (jurisprudencia Art. 245)
+            if (yearsForIndemnity === 0 && (months > 0 || days > 0)) {
+                yearsForIndemnity = 1; // Mínimo 1 año de indemnización por Art. 245.
+            }
+
+            return {
+                years, // Años completos reales
+                months,
+                days,
+                yearsForIndemnity, // Años computables para indemnización
+                daysInYear, // Días trabajados en el año de egreso
+                daysInSemester // Días trabajados en el semestre de egreso
+            };
+        };
+
+        const formatCurrency = (amount) => {
+            return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(amount);
+        };
+
+        // --- CÁLCULO DE RUBROS Y MULTAS ---
+        const calculateSeverance = () => {
+            // Datos del Empleado
+            const sueldo = parseFloat(document.getElementById('sueldo').value) || 0;
+            const topeSalarialInput = document.getElementById('tope-salarial').value;
+            // Usamos sueldo si el tope salarial está vacío
+            const topeSalarial = topeSalarialInput ? parseFloat(topeSalarialInput) : sueldo; 
+            
+            const fechaIngreso = document.getElementById('fecha-ingreso').value;
+            const fechaEgreso = document.getElementById('fecha-egreso').value || new Date().toISOString().substring(0, 10);
+            const jornada = parseFloat(document.getElementById('jornada').value) || 8;
+            const fine25323_2 = document.getElementById('fine-25323-2').checked;
+            const fine25323_1 = document.getElementById('fine-25323-1').checked;
+            const fineArt80 = document.getElementById('fine-art-80').checked; 
+
+            const resultDiv = document.getElementById('result-summary');
+
+            if (!fechaIngreso || sueldo <= 0 || jornada <= 0) {
+                resultDiv.innerHTML = '<p class="text-red-500 font-bold">Por favor, complete la Fecha de Ingreso, Sueldo y Jornada.</p>';
+                return;
+            }
+
+            const { years, months, days, yearsForIndemnity, daysInYear, daysInSemester } = calculateAntiquity(fechaIngreso, fechaEgreso);
+            const proportionalityFactor = jornada / 8;
+            const workingDaysInYear = getDaysInYear(new Date(fechaEgreso).getFullYear());
+
+            // 1. BASE INDEMNIZATORIA (tope salarial Art. 245 LCT)
+            const baseIndemnizatoria245 = Math.min(sueldo, topeSalarial);
+
+            // 2. Indemnización por Antigüedad (Art. 245)
+            const indemAntiguedadBruto = baseIndemnizatoria245 * yearsForIndemnity;
+
+            // 3. Indemnización por Preaviso (Art. 231-232)
+            let mesesPreaviso = (years < 5) ? 1 : 2;
+            const indemPreavisoBruto = sueldo * mesesPreaviso; 
+
+            // 4. Integración Mes de Despido (Simplificado a 1 día para cálculo base)
+            // NOTA: En la práctica es por los días restantes del mes. Se deja simplificado.
+            const indemIntegracion = sueldo / 30; 
+
+            // 5. Sueldo Anual Complementario (SAC) Proporcional
+            const sacProporcionalBruto = (sueldo / 2) * (daysInSemester / 182.5);
+
+            // 6. Vacaciones No Gozadas Proporcionales (LCT Art. 156)
+            const baseVacationDays = getBaseVacationDays(years); // Usa los años reales completados
+            const proportionalDays = (baseVacationDays / workingDaysInYear) * daysInYear; // Días proporcionales
+            const vacacionesNoGozadasBruto = (sueldo / 25) * proportionalDays; // El cálculo usa 1/25 de sueldo.
+
+            // --------------------------------------------------------
+            // Subtotal de Rubros Remunerativos e Indemnizatorios Base
+            const subTotalBase = indemAntiguedadBruto + indemPreavisoBruto + indemIntegracion + sacProporcionalBruto + vacacionesNoGozadasBruto;
+            
+            // --------------------------------------------------------
+            // 7. MULTAS LCT (Ley 25.323 y Art. 80)
+            let totalMultas = 0;
+            let multa25323_2 = 0;
+            let indemArt80 = 0; 
+
+            // Multa Art. 2 Ley 25.323: Duplicación del 50% de las indemnizaciones base (Antigüedad + Preaviso)
+            if (fine25323_2) {
+                multa25323_2 = (indemAntiguedadBruto + indemPreavisoBruto) * 0.5; 
+                totalMultas += multa25323_2;
+            }
+
+            // Indemnización Art. 80 LCT: 3 veces la MRMNyH (usamos el sueldo)
+            if (fineArt80) {
+                indemArt80 = sueldo * 3;
+                totalMultas += indemArt80;
+            }
+
+            // Multa Art. 1 Ley 25.323: (Placeholder para no registrada)
+            const multa25323_1 = (fine25323_1) ? subTotalBase * 0.10 : 0; 
+            totalMultas += multa25323_1;
+
+            // --------------------------------------------------------
+            // TOTAL FINAL
+            const totalLiquidacionSinProporcional = subTotalBase + totalMultas;
+            const totalLiquidacion = totalLiquidacionSinProporcional * proportionalityFactor;
+
+
+            currentLiquidationResult = {
+                sueldo,
+                topeSalarial,
+                fechaIngreso,
+                fechaEgreso,
+                years,
+                months,
+                yearsForIndemnity,
+                baseIndemnizatoria245,
+                indemAntiguedad: indemAntiguedadBruto,
+                indemPreaviso: indemPreavisoBruto,
+                indemIntegracion: indemIntegracion,
+                sacProporcional: sacProporcionalBruto,
+                vacacionesNoGozadas: vacacionesNoGozadasBruto,
+                multa25323_2: multa25323_2,
+                multa25323_1: multa25323_1,
+                indemArt80: indemArt80,
+                totalMultas: totalMultas,
+                totalLiquidacion: totalLiquidacion,
+                proportionalityFactor,
+                baseVacationDays: baseVacationDays,
+                proportionalDays: proportionalDays.toFixed(2)
+            };
+
+            // Mostrar Resultados
+            resultDiv.innerHTML = `
+                <div class="space-y-3">
+                    <h3 class="text-xl font-bold text-blue-700 border-b pb-2">Resumen de Liquidación Detallado</h3>
+                    <div class="flex justify-between pb-1 text-sm text-gray-700">
+                        <span class="font-medium">Antigüedad Computable (Art. 245):</span>
+                        <span>${yearsForIndemnity} Años</span>
+                    </div>
+                    <div class="flex justify-between pb-1 text-sm text-gray-700">
+                        <span class="font-medium">Base de Cálculo Art. 245 (Tope Salarial):</span>
+                        <span>${formatCurrency(baseIndemnizatoria245)}</span>
+                    </div>
+                    <div class="flex justify-between pb-1 text-sm text-gray-700">
+                        <span class="font-medium">Jornada Proporcional (${jornada}hs / 8hs):</span>
+                        <span>${(proportionalityFactor * 100).toFixed(2)}%</span>
+                    </div>
+                    
+                    <hr class="my-3 border-gray-200">
+
+                    <!-- Rubros Base -->
+                    <div class="flex justify-between text-gray-700">
+                        <span class="font-bold">Indemnización por Antigüedad:</span>
+                        <span class="font-bold text-green-600">${formatCurrency(indemAntiguedadBruto)}</span>
+                    </div>
+                    <div class="flex justify-between text-gray-700">
+                        <span class="font-bold">Indemnización por Preaviso (${mesesPreaviso} mes(es)):</span>
+                        <span class="font-bold text-green-600">${formatCurrency(indemPreavisoBruto)}</span>
+                    </div>
+                    
+                    <!-- Rubros Proporcionales -->
+                    <div class="flex justify-between border-t border-dashed pt-2">
+                        <span class="text-sm text-gray-600">SAC Proporcional:</span>
+                        <span class="text-sm text-gray-600">${formatCurrency(sacProporcionalBruto)}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">Vacaciones No Gozadas (${proportionalDays} días - Base ${baseVacationDays} días):</span>
+                        <span class="text-sm text-gray-600">${formatCurrency(vacacionesNoGozadasBruto)}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">Integración Mes Despido (1 día estimado):</span>
+                        <span class="text-sm text-gray-600">${formatCurrency(indemIntegracion)}</span>
+                    </div>
+
+
+                    <!-- Multas -->
+                    <hr class="my-3 border-gray-200">
+                    <div class="flex justify-between">
+                        <span class="text-red-600 font-bold">MULTAS LCT (Total):</span>
+                        <span class="text-red-600 font-bold">${formatCurrency(totalMultas)}</span>
+                    </div>
+                    ${multa25323_2 > 0 ? `<div class="flex justify-between text-xs text-red-500"><span>Multa Art. 2 Ley 25.323 (50%):</span><span>${formatCurrency(multa25323_2)}</span></div>` : ''}
+                    ${indemArt80 > 0 ? `<div class="flex justify-between text-xs text-red-500"><span>Indemnización Art. 80 LCT (3 x MRMNyH):</span><span>${formatCurrency(indemArt80)}</span></div>` : ''}
+                    ${multa25323_1 > 0 ? `<div class="flex justify-between text-xs text-red-500"><span>Multa Art. 1 Ley 25.323 (10%):</span><span>${formatCurrency(multa25323_1)}</span></div>` : ''}
+
+
+                    <hr class="my-4 border-gray-500">
+                    <div class="flex justify-between items-center bg-red-100 p-3 rounded-lg">
+                        <span class="text-2xl font-extrabold text-red-800">TOTAL ESTIMADO:</span>
+                        <span class="text-3xl font-extrabold text-red-800">${formatCurrency(totalLiquidacion)}</span>
+                    </div>
+                    <p class="text-xs text-red-500 mt-2">Este total ya aplica la proporción de la jornada laboral.</p>
+                </div>
+            `;
+
+            document.getElementById('pdf-button').classList.remove('opacity-50', 'pointer-events-none');
+        };
+
+        // --- MANEJO DE HISTORIAL (FIRESTORE) ---
+        const saveLiquidation = async () => {
+            if (!currentLiquidationResult) {
+                showModal("Error", "Debe calcular la liquidación primero.");
+                return;
+            }
+            // Si db es nulo, estamos en modo local.
+            if (!db) {
+                showModal("Atención", "No se pudo guardar el historial.", "La base de datos (Firestore) no está activa porque la aplicación se está ejecutando en modo local sin una configuración de Firebase. La funcionalidad principal (cálculo y PDF) funciona correctamente.", 'info');
+                return;
+            }
+
+            showSpinner(true);
+            try {
+                const workerName = document.getElementById('worker-name').value;
+                const workerDni = document.getElementById('dni').value;
+                const cct = document.getElementById('cct').value;
+
+                const dataToSave = {
+                    ...currentLiquidationResult,
+                    workerName,
+                    workerDni,
+                    cct,
+                    savedAt: new Date().toISOString()
+                };
+
+                await addDoc(getLiquidationCollectionRef(), dataToSave);
+                
+                // No mostramos el modal de guardado para no interferir con la descarga del PDF
+                // showModal("Guardado Exitoso", `La liquidación para ${workerName} ha sido guardada en la Base de Datos (Firestore).`, 'info');
+
+                loadHistory();
+
+            } catch (error) {
+                console.error("Error saving liquidation:", error);
+                showModal("Error de Guardado", `Hubo un error al guardar la liquidación: ${error.message}`);
+            } finally {
+                showSpinner(false);
+            }
+        };
+        
+        const loadHistory = () => {
+            if (!db) {
+                 const historyBody = document.getElementById('history-table-body');
+                 historyBody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-orange-500">El historial no está activo en ejecución local sin un proyecto Firebase configurado.</td></tr>';
+                 return;
+            }
+
+            const historyBody = document.getElementById('history-table-body');
+            historyBody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-gray-500">Cargando historial...</td></tr>';
+
+            const q = query(getLiquidationCollectionRef(), limit(50));
+            
+            onSnapshot(q, (snapshot) => {
+                historyBody.innerHTML = '';
+                if (snapshot.empty) {
+                    historyBody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-gray-500">No hay liquidaciones guardadas.</td></tr>';
+                    return;
+                }
+
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const row = historyBody.insertRow();
+                    row.className = 'hover:bg-gray-50 transition duration-150';
+                    row.innerHTML = `
+                        <td class="p-3 text-sm font-medium">${data.workerName || 'N/A'} (${data.workerDni || 'N/A'})</td>
+                        <td class="p-3 text-sm">${new Date(data.fechaEgreso).toLocaleDateString('es-AR')}</td>
+                        <td class="p-3 text-sm font-bold text-red-600">${formatCurrency(data.totalLiquidacion)}</td>
+                        <td class="p-3 text-sm text-right">
+                            <button onclick="viewDetails('${doc.id}')" class="text-blue-500 hover:text-blue-700 font-semibold text-xs">VER DETALLES</button>
+                        </td>
+                    `;
+                });
+            }, (error) => {
+                console.error("Error loading history:", error);
+                historyBody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-red-500">Error al cargar historial.</td></tr>';
+            });
+        };
+
+        const viewDetails = async (docId) => {
+            showSpinner(true);
+            try {
+                // Si db es nulo, no podemos ver detalles.
+                if (!db) {
+                    showModal("Atención", "No se puede ver el detalle.", "La base de datos (Firestore) no está activa en modo local.", 'info');
+                    return;
+                }
+                
+                // Nota: Usamos getDocs en el path de la colección para simular la obtención del documento
+                const docRef = doc(db, `artifacts/${appId}/users/${currentUser.uid}/liquidations`, docId);
+                const docSnapshot = await getDocs(query(collection(db, docRef.path), where('__name__', '==', docId), limit(1)));
+                
+                if (docSnapshot.empty) {
+                    showModal("Error", "Documento no encontrado.");
+                    return;
+                }
+                const data = docSnapshot.docs[0].data();
+
+                const content = `
+                    <p class="mb-2"><strong>Trabajador:</strong> ${data.workerName} (${data.workerDni})</p>
+                    <p class="mb-2"><strong>CCT:</strong> ${data.cct || 'N/A'}</p>
+                    <p class="mb-2"><strong>Fecha Ingreso:</strong> ${new Date(data.fechaIngreso).toLocaleDateString('es-AR')}</p>
+                    <p class="mb-2"><strong>Fecha Egreso:</strong> ${new Date(data.fechaEgreso).toLocaleDateString('es-AR')}</p>
+                    <p class="mb-2"><strong>Sueldo Base:</strong> ${formatCurrency(data.sueldo)}</p>
+                    <p class="mb-4"><strong>Tope Salarial Aplicado (Art. 245):</strong> ${formatCurrency(data.baseIndemnizatoria245)}</p>
+                    <hr>
+                    <p class="mt-4"><strong>Antigüedad computable:</strong> ${data.yearsForIndemnity} años.</p>
+                    <p><strong>Días Vacaciones Base (${data.baseVacationDays} días):</strong> ${data.proportionalDays} días proporcionales.</p>
+                    <hr class="my-2">
+                    <p class="font-bold text-lg text-gray-800">Detalle de Rubros:</p>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li>Indemnización por Antigüedad: ${formatCurrency(data.indemAntiguedad)}</li>
+                        <li>Indemnización por Preaviso: ${formatCurrency(data.indemPreaviso)}</li>
+                        <li>SAC Proporcional: ${formatCurrency(data.sacProporcional)}</li>
+                        <li>Vacaciones No Gozadas: ${formatCurrency(data.vacacionesNoGozadas)}</li>
+                        <li class="text-red-600">Multas L. 25.323 Art. 2: ${formatCurrency(data.multa25323_2)}</li>
+                        <li class="text-red-600">Indemnización Art. 80 LCT: ${formatCurrency(data.indemArt80)}</li>
+                        <li class="text-red-600">Multas L. 25.323 Art. 1: ${formatCurrency(data.multa25323_1)}</li>
+                    </ul>
+                    <hr class="my-4">
+                    <p class="text-xl font-extrabold text-red-700">TOTAL FINAL ESTIMADO: ${formatCurrency(data.totalLiquidacion)}</p>
+                `;
+                showModal(`Detalle de Liquidación #${docId.substring(0, 5)}`, content, 'info');
+
+            } catch (error) {
+                console.error("Error fetching details:", error);
+                showModal("Error", "No se pudo obtener el detalle de la liquidación.");
+            } finally {
+                showSpinner(false);
+            }
+        };
+
+        // --- GENERACIÓN DE PDF ---
+        const generatePDF = () => {
+            // Referenciamos la librería de forma directa desde el scope global
+            const PDFConstructor = window.jsPDF;
+            
+            // 1. Verificar si la liquidación fue calculada.
+            if (!currentLiquidationResult) {
+                showModal("Error", "Debe calcular la liquidación primero.", "Presione el botón 'CALCULAR LIQUIDACIÓN' antes de intentar generar el PDF.");
+                return;
+            }
+
+            // 2. Verificar si la librería jsPDF está disponible globalmente.
+            if (!PDFConstructor) {
+                showModal("Error", "Librería de PDF no disponible", "La librería de generación de PDF (jsPDF) no se cargó correctamente. Esto puede suceder por problemas de red o porque la ejecución local no la encuentra. Intente recargar la aplicación.", 'error');
+                return;
+            }
+
+            const doc = new PDFConstructor();
+            const result = currentLiquidationResult;
+
+            const workerName = document.getElementById('worker-name').value;
+            const workerCuit = document.getElementById('cuit').value;
+            const workerDni = document.getElementById('dni').value;
+            const cct = document.getElementById('cct').value;
+            const workerProfession = document.getElementById('profesion').value;
+            const jornada = document.getElementById('jornada').value;
+
+            let y = 20;
+
+            doc.setFontSize(16);
+            doc.text("Cálculo de Liquidación Laboral (LCT Argentina)", 105, y, { align: 'center' });
+            y += 10;
+            doc.setFontSize(10);
+            doc.text("NOTA: Cálculo estimado, aplica tope salarial y multas seleccionadas. No incluye ítems no remunerativos ni descuentos.", 105, y, { align: 'center' });
+            y += 15;
+
+            // Datos del Trabajador
+            doc.setFontSize(12);
+            doc.text("DATOS DEL TRABAJADOR:", 20, y);
+            y += 5;
+            doc.line(20, y, 190, y);
+            y += 5;
+            doc.text(`Trabajador: ${workerName} (${workerProfession})`, 20, y);
+            doc.text(`DNI / CUIT: ${workerDni} / ${workerCuit}`, 110, y);
+            y += 5;
+            doc.text(`CCT: ${cct}`, 20, y);
+            doc.text(`Sueldo (MRMNyH): ${formatCurrency(result.sueldo)}`, 110, y);
+            y += 5;
+            doc.text(`Tope Salarial Aplicado (Art. 245): ${formatCurrency(result.baseIndemnizatoria245)}`, 20, y);
+            doc.text(`Jornada Proporcional: ${(result.proportionalityFactor * 100).toFixed(2)}%`, 110, y);
+            y += 10;
+            
+            // Antigüedad
+            doc.text(`ANTIGÜEDAD TOTAL: ${result.years} Años, ${result.months} Meses, ${result.days} Días`, 20, y);
+            y += 5;
+            doc.text(`Años Computables (Art. 245): ${result.yearsForIndemnity} Años`, 20, y);
+            y += 10;
+
+            // Conceptos
+            doc.text("DETALLE DE RUBROS:", 20, y);
+            y += 5;
+            doc.line(20, y, 190, y);
+            y += 5;
+
+            // Rubros Indemnizatorios
+            doc.text("Indemnización por Antigüedad (Art. 245):", 25, y);
+            doc.text(formatCurrency(result.indemAntiguedad), 185, y, { align: 'right' });
+            y += 7;
+
+            doc.text(`Indemnización por Preaviso (${result.years < 5 ? 1 : 2} mes(es)):`, 25, y);
+            doc.text(formatCurrency(result.indemPreaviso), 185, y, { align: 'right' });
+            y += 7;
+            
+            // Integración Mes Despido
+            doc.text(`Integración Mes Despido (1 día estimado):`, 25, y);
+            doc.text(formatCurrency(result.indemIntegracion), 185, y, { align: 'right' });
+            y += 7;
+
+            // Rubros Proporcionales
+            doc.text("SAC Proporcional:", 25, y);
+            doc.text(formatCurrency(result.sacProporcional), 185, y, { align: 'right' });
+            y += 7;
+
+            doc.text(`Vacaciones No Gozadas (${result.proportionalDays} días - Base ${result.baseVacationDays} días):`, 25, y);
+            doc.text(formatCurrency(result.vacacionesNoGozadas), 185, y, { align: 'right' });
+            y += 7;
+
+            // Multas
+            if (result.totalMultas > 0) {
+                y += 5;
+                doc.setFontSize(12);
+                doc.text("MULTAS Y SANCIONES LCT:", 20, y);
+                doc.text(formatCurrency(result.totalMultas), 185, y, { align: 'right' });
+                y += 7;
+                doc.setFontSize(10);
+                if (result.multa25323_2 > 0) {
+                    doc.text(`Multa Art. 2 Ley 25.323 (50% sobre 245 y Preaviso): ${formatCurrency(result.multa25323_2)}`, 25, y);
+                    y += 5;
+                }
+                if (result.indemArt80 > 0) {
+                    doc.text(`Indemnización Art. 80 LCT (3 x MRMNyH - Certificados): ${formatCurrency(result.indemArt80)}`, 25, y);
+                    y += 5;
+                }
+                if (result.multa25323_1 > 0) {
+                    doc.text(`Multa Art. 1 Ley 25.323 (10% - Causa: Falta de registración): ${formatCurrency(result.multa25323_1)}`, 25, y);
+                    y += 5;
+                }
+                doc.setFontSize(12);
+            } else {
+                 y += 10;
+            }
+
+
+            // Total
+            y += 5;
+            doc.line(130, y, 190, y);
+            y += 5;
+            doc.setFontSize(14);
+            doc.text("TOTAL FINAL ESTIMADO (Incluye Proporcionalidad):", 20, y);
+            doc.text(formatCurrency(result.totalLiquidacion), 185, y, { align: 'right' });
+            y += 10;
+            
+            // Guardar en DB y descargar
+            saveLiquidation(); 
+            
+            // Genera el nombre del archivo con el nombre del trabajador
+            const safeWorkerName = workerName.trim().replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_') || 'Trabajador';
+            doc.save(`Liquidacion_${safeWorkerName}_${new Date().toISOString().substring(0, 10)}.pdf`);
+        };
+
+
+        // --- UI Initialization ---
+        const updateCurrentDate = () => {
+            const today = new Date().toISOString().substring(0, 10);
+            document.getElementById('fecha-egreso').value = today;
+        };
+        
+        window.onload = () => {
+            handleAuth();
+            updateCurrentDate();
+        };
+
+        window.calculateSeverance = calculateSeverance;
+        window.generatePDF = generatePDF;
+        window.viewDetails = viewDetails;
+        window.loadHistory = loadHistory;
+        window.handleLogout = handleLogout;
+
+    </script>
+    <style>
+        .chart-container { position: relative; width: 100%; max-width: 800px; margin-left: auto; margin-right: auto; height: 350px; max-height: 450px; }
+        body { font-family: 'Inter', sans-serif; background-color: #F8F8F8; color: #1F2937; }
+        .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); padding: 1.5rem; margin-bottom: 1.5rem; }
+        .btn-primary { background-color: #EF4444; color: white; padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-weight: 600; transition: background-color 0.2s; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
+        .btn-primary:hover { background-color: #DC2626; }
+        .btn-secondary { background-color: #3B82F6; color: white; padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-weight: 600; transition: background-color 0.2s; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
+        .btn-secondary:hover { background-color: #2563EB; }
+        .input-style { padding: 0.75rem; border: 1px solid #D1D5DB; border-radius: 0.5rem; width: 100%; transition: border-color 0.2s; }
+        .input-style:focus { border-color: #3B82F6; outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25); }
+        th { background-color: #F3F4F6; text-align: left; font-weight: 600; color: #4B5563; border-bottom: 2px solid #E5E7EB; }
+        .table-container { overflow-x: auto; border: 1px solid #E5E7EB; border-radius: 0.5rem; }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <div id="loading-spinner" class="fixed inset-0 flex items-center justify-center bg-gray-500 bg-opacity-75 z-50 hidden">
+        <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-red-600"></div>
+        <p class="ml-4 text-white text-lg">Cargando...</p>
+    </div>
+
+    <div id="auth-screen" class="min-h-screen flex items-center justify-center p-4">
+        <p class="text-xl font-medium text-gray-700">Iniciando sesión anónima para acceder a la aplicación...</p>
+    </div>
+
+    <div id="main-app" class="hidden">
+        
+        <header class="bg-white shadow-lg sticky top-0 z-10">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+                <h1 class="text-2xl font-bold text-red-600">Calculadora Laboral Argentina</h1>
+                <div class="flex items-center space-x-4">
+                    <span id="user-info" class="text-gray-600 text-sm truncate">Cargando ID...</span>
+                    <button onclick="handleLogout()" class="bg-red-500 text-white px-3 py-1 rounded-md hover:bg-red-700 transition">Cerrar Sesión</button>
+                </div>
+            </div>
+        </header>
+
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- Columna de Ingreso de Datos (Izquierda) -->
+            <div class="lg:col-span-1">
+                <div class="card">
+                    <h2 class="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">Datos del Trabajador</h2>
+                    <form id="liquidation-form" onsubmit="event.preventDefault(); calculateSeverance()">
+                        
+                        <div class="mb-4">
+                            <label for="worker-name" class="block text-sm font-medium text-gray-700 mb-1">Nombre y Apellido</label>
+                            <input type="text" id="worker-name" required class="input-style" placeholder="Ej: Juan Pérez">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label for="dni" class="block text-sm font-medium text-gray-700 mb-1">DNI</label>
+                                <input type="text" id="dni" class="input-style" placeholder="Ej: 12345678">
+                            </div>
+                            <div>
+                                <label for="cuit" class="block text-sm font-medium text-gray-700 mb-1">CUIT</label>
+                                <input type="text" id="cuit" class="input-style" placeholder="Ej: 20-12345678-9">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 mb-6">
+                            <div>
+                                <label for="cct" class="block text-sm font-medium text-gray-700 mb-1">CCT Aplicado</label>
+                                <input type="text" id="cct" class="input-style" placeholder="Ej: 130/75 (Comercio)">
+                            </div>
+                            <div>
+                                <label for="profesion" class="block text-sm font-medium text-gray-700 mb-1">Profesión</label>
+                                <input type="text" id="profesion" class="input-style" placeholder="Ej: Administrativo">
+                            </div>
+                        </div>
+
+                        <h2 class="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">Datos de Liquidación</h2>
+                        
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label for="fecha-ingreso" class="block text-sm font-medium text-gray-700 mb-1">Fecha de Ingreso</label>
+                                <input type="date" id="fecha-ingreso" required class="input-style">
+                            </div>
+                            <div>
+                                <label for="fecha-egreso" class="block text-sm font-medium text-gray-700 mb-1">Fecha de Egreso</label>
+                                <input type="date" id="fecha-egreso" required class="input-style">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label for="sueldo" class="block text-sm font-medium text-gray-700 mb-1">MRMNyH (Sueldo)</label>
+                                <input type="number" id="sueldo" required class="input-style" placeholder="Sueldo Bruto" min="0">
+                            </div>
+                            <div>
+                                <label for="tope-salarial" class="block text-sm font-medium text-gray-700 mb-1">Tope Salarial (Art. 245)</label>
+                                <input type="number" id="tope-salarial" class="input-style" placeholder="Opcional: Dejar vacío si es igual al sueldo" min="0">
+                            </div>
+                        </div>
+                        <div class="mb-6">
+                            <label for="jornada" class="block text-sm font-medium text-gray-700 mb-1">Jornada (Horas Diarias)</label>
+                            <input type="number" id="jornada" required class="input-style" placeholder="Ej: 8 (Jornada Completa)" min="1" max="8">
+                            <p class="text-xs text-gray-500 mt-1">Si la jornada es reducida, el total se ajusta proporcionalmente.</p>
+                        </div>
+                        
+                        <h2 class="text-xl font-bold mb-4 text-gray-800 border-b pb-2">Selección de Multas y Sanciones</h2>
+                        
+                        <div class="space-y-2 mb-8">
+                            <div class="mb-4">
+                                <input type="checkbox" id="fine-25323-2" class="rounded text-red-600 focus:ring-red-500">
+                                <label for="fine-25323-2" class="ml-2 text-sm font-medium text-gray-700">Art. 2 Ley 25.323 (50% de Indemnizaciones)</label>
+                            </div>
+                            <div class="mb-4">
+                                <input type="checkbox" id="fine-art-80" class="rounded text-red-600 focus:ring-red-500">
+                                <label for="fine-art-80" class="ml-2 text-sm font-medium text-gray-700">Art. 80 LCT (3 x MRMNyH - Certificados)</label>
+                            </div>
+                            <div class="mb-4">
+                                <input type="checkbox" id="fine-25323-1" class="rounded text-red-600 focus:ring-red-500">
+                                <label for="fine-25323-1" class="ml-2 text-sm font-medium text-gray-700">Art. 1 Ley 25.323 (10% - Relación no registrada - Placeholder)</label>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="w-full btn-primary transition transform hover:scale-[1.01] active:scale-[0.99]">
+                            CALCULAR LIQUIDACIÓN
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Columna de Resultados e Historial (Derecha) -->
+            <div class="lg:col-span-2">
+                
+                <!-- Resultados -->
+                <div class="card bg-gray-50">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2">Resultados</h2>
+                    <div id="result-summary" class="min-h-[200px] flex items-center justify-center text-gray-500">
+                        Presione "CALCULAR LIQUIDACIÓN" para ver el detalle.
+                    </div>
+                    <button id="pdf-button" onclick="generatePDF()" 
+                            class="w-full mt-4 btn-secondary opacity-50 pointer-events-none transition transform hover:scale-[1.01] active:scale-[0.99]">
+                        GENERAR PDF Y GUARDAR
+                    </button>
+                </div>
+
+                <!-- Historial -->
+                <div class="card mt-8">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2">Historial de Liquidaciones</h2>
+                    <div class="table-container">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead>
+                                <tr>
+                                    <th class="p-3 text-sm">Trabajador (DNI)</th>
+                                    <th class="p-3 text-sm">Fecha Egreso</th>
+                                    <th class="p-3 text-sm">Total Estimado</th>
+                                    <th class="p-3 text-sm text-right">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-table-body" class="bg-white divide-y divide-gray-200">
+                                <!-- Filas de historial se insertan aquí -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal General -->
+    <div id="modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg transform transition-all duration-300 scale-100">
+            <h3 id="modal-title" class="text-xl font-bold mb-4 text-red-600"></h3>
+            <div id="modal-content" class="text-gray-700 mb-6 max-h-96 overflow-y-auto"></div>
+            <button onclick="hideModal()" class="w-full py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700">Aceptar</button>
+        </div>
+    </div>
+
+</body>
+</html>
+
