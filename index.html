@@ -6,18 +6,17 @@
     <title>Calculadora de Indemnizaciones Laborales (Argentina)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- LIBRERÍA PDF (ELIMINAMOS el CDN global de aquí) -->
-    <!-- jsPDF se importará de forma modular más abajo para forzar la compatibilidad. -->
+    <!-- LIBRERÍA PDF (CARGA GLOBAL para mayor compatibilidad, PERO se referenciará de forma asíncrona) -->
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
-    <!-- Lógica de la Aplicación: Volvemos a 'type="module"' con Firebase V9 -->
+    <!-- Lógica de la Aplicación: Mantenemos 'type="module"' con Firebase V9 -->
     <script type="module">
-        // Importaciones MODULARES V9 (Firebase y jsPDF)
+        // Importaciones MODULARES V9 de Firebase
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, query, limit, onSnapshot, addDoc, doc, getDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        // Importación MODULAR de jsPDF (¡La solución definitiva para módulos!)
-        import { jsPDF } from "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js";
+        // **IMPORTANTE: ELIMINAMOS la importación directa de jsPDF de aquí.**
 
 
         // Establecer el nivel de log
@@ -493,8 +492,9 @@
         };
 
         // --- GENERACIÓN DE PDF ---
-        const generatePDF = () => {
-            // Utilizamos la referencia directa 'jsPDF' importada modularmente
+        const generatePDF = async () => {
+            // Utilizamos la importación asíncrona para forzar la carga en el ámbito del módulo
+            const { jsPDF } = await import("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
             const PDFConstructor = jsPDF;
             
             if (!currentLiquidationResult) {
@@ -503,8 +503,7 @@
             }
 
             if (!PDFConstructor) {
-                // Este mensaje solo debería aparecer si la red falla al cargar el CDN de jsPDF
-                showModal("Error", "Librería de PDF no disponible", "La librería de generación de PDF (jsPDF) no se cargó correctamente. Intente recargar la página o verificar su conexión.", 'error');
+                showModal("Error", "Librería de PDF no disponible", "No se pudo cargar la librería jsPDF. Esto puede ser un problema de red o de compatibilidad del navegador.", 'error');
                 return;
             }
 
