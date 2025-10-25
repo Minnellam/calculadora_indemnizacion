@@ -6,28 +6,31 @@
     <title>Calculadora de Indemnizaciones Laborales (Argentina)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- LIBRERÍA PDF (CARGA GLOBAL) -->
+    <!-- LIBRERÍA PDF (CARGA GLOBAL - Mantenemos esta porque es lo que funciona) -->
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
-    <!-- Librerías de Firebase (Carga Global V8: Exponen el objeto 'firebase') -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-    <!-- firebase-firestore-compat.js ya no es necesario, lo eliminamos. -->
+    <!-- Lógica de la Aplicación: Volvemos a 'type="module"' con Firebase V9 -->
+    <script type="module">
+        // Importaciones de Firebase V9 (Necesarias para type="module")
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, limit, onSnapshot, addDoc, doc, getDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // Establecer el nivel de log
+        if (typeof setLogLevel !== 'undefined') {
+            setLogLevel('debug');
+        }
 
-    <!-- Lógica de la Aplicación: Script tradicional para acceder a global 'firebase' y 'window.jsPDF' -->
-    <script>
         // Configuraciones de entorno (Mantenemos la estructura para compatibilidad)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfigRaw = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
         const firebaseConfig = JSON.parse(firebaseConfigRaw);
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null; 
         
-        // Variables de la aplicación (Almacenarán las instancias de servicio)
+        // Variables de la aplicación (Instancias de servicio V9)
         let app = null;
-        let db = null; // Instancia de Firestore (V8)
-        let auth = null; // Instancia de Auth (V8)
+        let db = null; 
+        let auth = null; 
         let currentUser = { uid: 'local_user' };
         let currentLiquidationResult = null;
         
@@ -56,8 +59,8 @@
             return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(amount);
         };
 
-        // Esta función devuelve la referencia de la colección (V8 method)
-        const getLiquidationCollectionRef = () => db.collection(`artifacts/${appId}/users/${currentUser.uid}/liquidations`);
+        // Esta función devuelve la referencia de la colección (V9 modular)
+        const getLiquidationCollectionRef = () => collection(db, `artifacts/${appId}/users/${currentUser.uid}/liquidations`);
 
         // --- AUTH & UI LOGIC ---
         const handleAuth = async () => {
@@ -73,30 +76,29 @@
                 return;
             }
             
-            // Modo Canvas / Producción: Inicializar Firebase (V8 Logic)
+            // Modo Canvas / Producción: Inicializar Firebase (V9 Logic)
             try {
-                // 1. Initialize App (V8)
-                app = firebase.initializeApp(firebaseConfig);
+                // 1. Initialize App (V9)
+                app = initializeApp(firebaseConfig);
                 
-                // 2. Get Service Instances (V8)
-                auth = app.auth();
-                db = app.firestore();
-                db.settings({ timestampsInSnapshots: true }); // Práctica recomendada V8
+                // 2. Get Service Instances (V9)
+                auth = getAuth(app);
+                db = getFirestore(app);
 
                 // 3. Sign In
                 if (initialAuthToken) {
-                    await auth.signInWithCustomToken(initialAuthToken);
+                    await signInWithCustomToken(auth, initialAuthToken);
                 } else {
-                    await auth.signInAnonymously();
+                    await signInAnonymously(auth);
                 }
             } catch (error) {
                 console.error("Firebase Init Error:", error);
-                showModal("Error de Inicialización", "No se pudo conectar a la base de datos o autenticar. Verifique la consola para detalles.");
-                return; // Detener si falla la inicialización/auth
+                showModal("Error de Inicialización", "No se pudo conectar a la base de datos. Verifique la consola para detalles.");
+                return; 
             }
             
             // 4. Set up Auth State Observer
-            auth.onAuthStateChanged(async (user) => {
+            onAuthStateChanged(auth, async (user) => {
                 if (user) {
                     currentUser = user;
                     document.getElementById('auth-screen').classList.add('hidden');
@@ -115,8 +117,8 @@
             
             showSpinner(true);
             try {
-                await auth.signOut();
-                await auth.signInAnonymously(); // Vuelve a iniciar sesión anónima
+                await signOut(auth);
+                await signInAnonymously(auth); 
             } catch (error) {
                 console.error("Logout Error:", error);
             }
@@ -384,8 +386,8 @@
                     cct,
                     savedAt: new Date().toISOString()
                 };
-                // V8 syntax for adding document
-                await getLiquidationCollectionRef().add(dataToSave);
+                // V9 syntax for adding document
+                await addDoc(getLiquidationCollectionRef(), dataToSave);
                 loadHistory();
 
             } catch (error) {
@@ -405,17 +407,17 @@
             const historyBody = document.getElementById('history-table-body');
             historyBody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-gray-500">Cargando historial...</td></tr>';
 
-            // V8 syntax for query and snapshot
-            const q = getLiquidationCollectionRef().limit(50);
+            // V9 syntax for query and snapshot
+            const q = query(getLiquidationCollectionRef(), limit(50));
             
-            q.onSnapshot((snapshot) => {
+            onSnapshot(q, (snapshot) => {
                 historyBody.innerHTML = '';
                 if (snapshot.empty) {
                     historyBody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-gray-500">No hay liquidaciones guardadas.</td></tr>';
                     return;
                 }
 
-                snapshot.docs.forEach((doc) => {
+                snapshot.forEach((doc) => {
                     const data = doc.data();
                     const row = historyBody.insertRow();
                     row.className = 'hover:bg-gray-50 transition duration-150';
@@ -442,11 +444,11 @@
                     return;
                 }
                 
-                // V8 syntax for getting document
-                const docRef = getLiquidationCollectionRef().doc(docId);
-                const docSnapshot = await docRef.get();
+                // V9 syntax for getting document
+                const docRef = doc(db, `artifacts/${appId}/users/${currentUser.uid}/liquidations`, docId);
+                const docSnapshot = await getDoc(docRef);
                 
-                if (!docSnapshot.exists) {
+                if (!docSnapshot.exists()) {
                     showModal("Error", "Documento no encontrado.");
                     return;
                 }
@@ -488,6 +490,7 @@
 
         // --- GENERACIÓN DE PDF ---
         const generatePDF = () => {
+            // Utilizamos window.jsPDF ya que se carga globalmente fuera del módulo
             const PDFConstructor = window.jsPDF;
             
             if (!currentLiquidationResult) {
@@ -496,6 +499,7 @@
             }
 
             if (!PDFConstructor) {
+                // Este mensaje solo debería aparecer si la red falla al cargar el CDN de jsPDF
                 showModal("Error", "Librería de PDF no disponible", "La librería de generación de PDF (jsPDF) no se cargó correctamente. Intente recargar la página o verificar su conexión.", 'error');
                 return;
             }
