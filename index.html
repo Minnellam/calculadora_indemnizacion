@@ -6,15 +6,19 @@
     <title>Calculadora de Indemnizaciones Laborales (Argentina)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- LIBRERÍA PDF (CARGA GLOBAL - Mantenemos esta porque es lo que funciona) -->
-    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <!-- LIBRERÍA PDF (ELIMINAMOS el CDN global de aquí) -->
+    <!-- jsPDF se importará de forma modular más abajo para forzar la compatibilidad. -->
 
     <!-- Lógica de la Aplicación: Volvemos a 'type="module"' con Firebase V9 -->
     <script type="module">
-        // Importaciones de Firebase V9 (Necesarias para type="module")
+        // Importaciones MODULARES V9 (Firebase y jsPDF)
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, query, limit, onSnapshot, addDoc, doc, getDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Importación MODULAR de jsPDF (¡La solución definitiva para módulos!)
+        import { jsPDF } from "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js";
+
 
         // Establecer el nivel de log
         if (typeof setLogLevel !== 'undefined') {
@@ -490,8 +494,8 @@
 
         // --- GENERACIÓN DE PDF ---
         const generatePDF = () => {
-            // Utilizamos window.jsPDF ya que se carga globalmente fuera del módulo
-            const PDFConstructor = window.jsPDF;
+            // Utilizamos la referencia directa 'jsPDF' importada modularmente
+            const PDFConstructor = jsPDF;
             
             if (!currentLiquidationResult) {
                 showModal("Error", "Debe calcular la liquidación primero.", "Presione el botón 'CALCULAR LIQUIDACIÓN' antes de intentar generar el PDF.");
@@ -808,8 +812,3 @@
 
 </body>
 </html>
-
-
-
-
-
