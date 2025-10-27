@@ -6,7 +6,7 @@
     <title>Calculadora de Indemnizaciones Laborales</title>
     <!-- Tailwind CSS CDN for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- JsPDF CDN for PDF generation (CARGA GLOBAL) -->
+    <!-- JsPDF CDN for PDF generation (Added to fix the "Librería de PDF no disponible" error) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script>
         // Configuración de Tailwind para usar la fuente Inter y nuestros colores
@@ -40,22 +40,10 @@
             background-color: var(--background-color);
             color: var(--text-color);
         }
-        .tab-button {
-            transition: all 0.2s ease-in-out;
-            cursor: pointer;
-            border-radius: 0.5rem;
-            padding: 0.5rem 1rem;
-            margin: 0 0.25rem;
-            text-align: center;
-            font-weight: 600;
-        }
         .tab-button.active {
             background-color: var(--primary-color);
             color: white;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-        }
-        .tab-button:not(.active):hover {
-            background-color: #e5e7eb; /* Subtle hover effect */
         }
         .input-group {
             margin-bottom: 1.5rem;
@@ -82,21 +70,19 @@
             color: var(--secondary-color);
             font-weight: 600;
         }
-        /* Style for the text logo placeholder (ND) */
+        /* Estilo para el logo de texto simple ND */
         .text-logo-nd {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 50px; 
-            width: 50px; 
-            margin: 0.5rem auto; 
-            background-color: var(--gold-accent);
-            color: var(--primary-color); /* Navy Blue Text on Gold */
-            font-weight: bold;
-            font-size: 1.5rem; 
-            border-radius: 9999px; 
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-            border: 2px solid var(--primary-color);
+            font-size: 3rem;
+            line-height: 1;
+            font-weight: 900;
+            display: inline-block;
+            /* Aplicar color: N = Gold, D = Navy */
+        }
+        .text-logo-nd span:first-child {
+            color: var(--secondary-color);
+        }
+        .text-logo-nd span:last-child {
+            color: var(--primary-color);
         }
     </style>
 </head>
@@ -106,10 +92,11 @@
         
         <!-- HEADER AND BRANDING (Updated with Navy/Gold Theme and Logo) -->
         <header class="text-center mb-6 p-4 bg-white rounded-xl shadow-lg border-t-8 border-[var(--primary-color)]">
-            
-            <!-- LOGO PLACEHOLDER ND -->
-            <div class="text-logo-nd">ND</div>
-            
+            <!-- LOGO TEXTO SIMPLE: ND -->
+            <div class="text-logo-nd mb-2 mx-auto" style="font-family: serif;">
+                <span class="inline-block" style="transform: translateY(-0.1em);">N</span>
+                <span class="inline-block">D</span>
+            </div>
             <h1 class="text-2xl font-extrabold main-title pt-1">Calculadora de Liquidación Laboral (LCT)</h1>
             <p class="text-sm highlight-gold">Nanci De Moraiz - Asesoramiento Jurídico Integral</p>
         </header>
@@ -131,9 +118,9 @@
         <!-- FIREBASE & CORE SETUP (Keep at start of script block) -->
         <script type="module">
             import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-            import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+            import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
             import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-            // REMOVED: import 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; <- Redundante y causa conflicto
+            // NOTE: jspdf is loaded via CDN link in <head> and should not be imported here again
 
             // Check if environment variables are defined, otherwise use fallbacks
             const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { /* Fallback or empty config */ };
@@ -167,19 +154,21 @@
 
             // Authentication Initialization
             if (window.auth) {
-                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                
-                const signInPromise = initialAuthToken
-                    ? signInWithCustomToken(window.auth, initialAuthToken)
-                    : signInAnonymously(window.auth);
-
-                signInPromise.then(anonUser => {
-                    window.userId = anonUser.user.uid;
-                    window.isAuthReady = true;
-                    listenForData();
-                }).catch(error => {
-                    console.error("Firebase Sign In Error. State saving disabled.", error);
-                    window.showModal('Error de Conexión', 'No se pudo iniciar sesión en la base de datos para guardar el estado. ' + error.message);
+                onAuthStateChanged(window.auth, (user) => {
+                    if (user) {
+                        window.userId = user.uid;
+                        window.isAuthReady = true;
+                        listenForData();
+                    } else {
+                        signInAnonymously(window.auth).then(anonUser => {
+                            window.userId = anonUser.user.uid;
+                            window.isAuthReady = true;
+                            listenForData();
+                        }).catch(error => {
+                            console.error("Firebase Sign In Error. State saving disabled.", error);
+                            window.showModal('Error de Conexión', 'No se pudo iniciar sesión en la base de datos para guardar el estado. ' + error.message);
+                        });
+                    }
                 });
             } else {
                 // Fallback if Firebase isn't configured
@@ -204,26 +193,24 @@
                         document.getElementById('cuit-trabajador').value = data.cuitTrabajador || '';
                         document.getElementById('cct-aplicable').value = data.cctAplicable || '';
                         document.getElementById('profesion-trabajador').value = data.profesionTrabajador || '';
-                        document.getElementById('mrmnyh-sueldo').value = data.mrmnyh || '';
-                        document.getElementById('tope-salarial').value = data.topeSalarial || '';
-                        
+                        // Asegurar que los valores numéricos se carguen como números o 0
+                        document.getElementById('mrmnyh-sueldo').value = data.mrmnyh || '0';
+                        document.getElementById('tope-salarial').value = data.topeSalarial || ''; // Tope salarial puede ser vacío
+
                         // Load Multa Checkboxes
                         document.getElementById('multa-25323-2').checked = data.multa25323Art2Checked === true;
                         document.getElementById('multa-25323-80').checked = data.multa25323Art80Checked === true;
                         document.getElementById('multa-132bis').checked = data.multa132bisChecked === true;
 
+
                         // Load data for Tab 1
-                        document.getElementById('sueldo-bruto-mes').value = data.sueldoBrutoMes || '';
+                        document.getElementById('sueldo-cct-mes').value = data.sueldoCctMes || '0';
+                        document.getElementById('sueldo-percibido-mes').value = data.sueldoPercibidoMes || '0';
+                        document.getElementById('sueldo-bruto-mes').value = data.sueldoBrutoMes || '0';
                         document.getElementById('base-horaria').value = data.baseHoraria || '200';
                         document.getElementById('horas-extras-50').value = data.horasExtras50 || '0';
                         document.getElementById('horas-extras-100').value = data.horasExtras100 || '0';
                         document.getElementById('feriados-trabajados').value = data.feriadosTrabajados || '0';
-                        
-                        // Load Differences Result if available
-                        window.currentDifferencesResult = parseFloat(data.currentDifferencesResult) || 0;
-                        document.getElementById('deuda-diferencias').value = window.currentDifferencesResult.toFixed(2);
-                        document.getElementById('resultado-diferencias').textContent = window.formatter.format(window.currentDifferencesResult);
-
                     }
                 }, (error) => {
                     console.error("Firestore Error:", error);
@@ -251,12 +238,13 @@
                         multa132bisChecked: document.getElementById('multa-132bis').checked,
 
                         // Tab 1 Base Data
+                        sueldoCctMes: document.getElementById('sueldo-cct-mes').value,
+                        sueldoPercibidoMes: document.getElementById('sueldo-percibido-mes').value,
                         sueldoBrutoMes: document.getElementById('sueldo-bruto-mes').value,
                         baseHoraria: document.getElementById('base-horaria').value,
                         horasExtras50: document.getElementById('horas-extras-50').value,
                         horasExtras100: document.getElementById('horas-extras-100').value,
                         feriadosTrabajados: document.getElementById('feriados-trabajados').value,
-                        currentDifferencesResult: window.currentDifferencesResult,
                     };
                     const docRef = doc(window.db, "artifacts", appId, "users", window.userId, "calculadora", "state");
                     await setDoc(docRef, dataToSave, { merge: true });
@@ -269,23 +257,37 @@
 
         <!-- TAB: 1. Diferencias Salariales (Base de Reclamo) -->
         <div id="diferencias-salariales-tab" class="tab-content bg-white p-6 rounded-xl shadow-lg border border-gray-200">
-            <h2 class="text-2xl font-semibold mb-6 border-b pb-2 text-[var(--primary-color)]">1. Diferencias Salariales (Horas, Feriados)</h2>
-            <p class="mb-4 text-sm text-[var(--subtle-text)]">Calcula la deuda del empleador por horas nocturnas y suplementarias para integrarla a la liquidación final.</p>
+            <h2 class="text-2xl font-semibold mb-6 border-b pb-2 text-[var(--primary-color)]">1. Diferencias Salariales (Base de Reclamo)</h2>
+            <p class="mb-4 text-sm text-[var(--subtle-text)]">Calcula la deuda del empleador por horas no abonadas y por diferencias en el sueldo de convenio para integrarla a la liquidación final.</p>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-                <!-- Sueldo Bruto Mensual (Base de Cálculo) -->
+                <!-- Sueldo Bruto CCT (Sueldo que debería percibir) -->
                 <div class="input-group">
-                    <label for="sueldo-bruto-mes" class="block text-sm font-medium text-[var(--text-color)]">Sueldo Bruto Mensual a Recalcular (MRMNyH)</label>
+                    <label for="sueldo-cct-mes" class="block text-sm font-medium text-[var(--text-color)]">Sueldo que DEBÍA percibir (Según CCT)</label>
+                    <input type="number" id="sueldo-cct-mes" placeholder="Sueldo Bruto por Convenio" value="0" min="0" onchange="saveBasicState()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm input-border-focus p-2 border" required>
+                    <p class="text-xs text-[var(--subtle-text)] mt-1">Monto bruto que corresponde por convenio/categoría.</p>
+                </div>
+
+                <!-- Sueldo Percibido (Sueldo real en recibo) -->
+                <div class="input-group">
+                    <label for="sueldo-percibido-mes" class="block text-sm font-medium text-[var(--text-color)]">Sueldo BRUTO PERCIBIDO (El de su recibo)</label>
+                    <input type="number" id="sueldo-percibido-mes" placeholder="Sueldo bruto real del recibo" value="0" min="0" onchange="saveBasicState()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm input-border-focus p-2 border" required>
+                    <p class="text-xs text-[var(--subtle-text)] mt-1">El monto bruto que figura en el recibo de sueldo.</p>
+                </div>
+
+                <!-- Sueldo Bruto Mensual (Base de Cálculo para Horas) -->
+                <div class="input-group">
+                    <label for="sueldo-bruto-mes" class="block text-sm font-medium text-[var(--text-color)]">Sueldo Base para CÁLCULO DE HORA (MRMNyH)</label>
                     <input type="number" id="sueldo-bruto-mes" placeholder="Ej: 1800000" onchange="saveBasicState()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm input-border-focus p-2 border" required>
-                    <p class="text-xs text-[var(--subtle-text)] mt-1">Sueldo percibido por el trabajador en el mes a reclamar (el más alto del último año para horas extras).</p>
+                    <p class="text-xs text-[var(--subtle-text)] mt-1">El MRMNyH del mes a reclamar (el más alto del último año para horas extras).</p>
                 </div>
 
                 <!-- Base Horaria -->
                 <div class="input-group">
                     <label for="base-horaria" class="block text-sm font-medium text-[var(--text-color)]">Base Horaria Mensual del CCT</label>
                     <input type="number" id="base-horaria" value="200" min="168" max="200" onchange="saveBasicState()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm input-border-focus p-2 border" required>
-                    <p class="text-xs text-[var(--subtle-text)] mt-1">Horas mensuales que establece el Convenio (ej: 200, 192, 180). Se usará para calcular el valor de la hora normal (Sueldo / Nro de Horas).</p>
+                    <p class="text-xs text-[var(--subtle-text)] mt-1">Horas mensuales que establece el Convenio (ej: 200). Se usará para calcular el valor de la hora normal.</p>
                 </div>
                 
                 <!-- Meses a Reclamar -->
@@ -299,31 +301,31 @@
                 <div class="input-group">
                     <label class="block text-sm font-medium text-[var(--text-color)]">Horario de Trabajo Habitual (Entrada - Salida)</label>
                     <div class="flex space-x-2 mt-1">
-                        <input type="time" id="hora-entrada" value="09:00" class="block w-1/2 rounded-md border-gray-300 shadow-sm input-border-focus p-2 border" required>
-                        <input type="time" id="hora-salida" value="17:00" class="block w-1/2 rounded-md border-gray-300 shadow-sm input-border-focus p-2 border" required>
+                        <input type="time" id="hora-entrada" value="09:00" onchange="saveBasicState()" class="block w-1/2 rounded-md border-gray-300 shadow-sm input-border-focus p-2 border" required>
+                        <input type="time" id="hora-salida" value="17:00" onchange="saveBasicState()" class="block w-1/2 rounded-md border-gray-300 shadow-sm input-border-focus p-2 border" required>
                     </div>
-                    <p class="text-xs text-[var(--subtle-text)] mt-1">Se usará para calcular automáticamente las horas nocturnas (21:00 a 06:00).</p>
+                    <p class="text-xs text-[var(--subtle-text)] mt-1">Se usa para calcular las horas nocturnas (21:00 a 06:00).</p>
                 </div>
 
                 <!-- Horas Extras 50% -->
                 <div class="input-group">
                     <label for="horas-extras-50" class="block text-sm font-medium text-[var(--text-color)]">Horas Extras al 50% No Abonadas (TOTAL)</label>
                     <input type="number" id="horas-extras-50" value="0" min="0" onchange="saveBasicState()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm input-border-focus p-2 border" required>
-                    <p class="text-xs text-[var(--subtle-text)] mt-1">Suma de horas extras del 50% (lunes a sábado 13:00) en el período reclamado.</p>
+                    <p class="text-xs text-[var(--subtle-text)] mt-1">Suma de horas extras del 50% en el período reclamado.</p>
                 </div>
 
                 <!-- Horas Extras 100% -->
                 <div class="input-group">
                     <label for="horas-extras-100" class="block text-sm font-medium text-[var(--text-color)]">Horas Extras al 100% No Abonadas (TOTAL)</label>
                     <input type="number" id="horas-extras-100" value="0" min="0" onchange="saveBasicState()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm input-border-focus p-2 border" required>
-                    <p class="text-xs text-[var(--subtle-text)] mt-1">Suma de horas extras del 100% (sábados post 13:00, domingos) en el período reclamado.</p>
+                    <p class="text-xs text-[var(--subtle-text)] mt-1">Suma de horas extras del 100% (domingos, feriados) en el período reclamado.</p>
                 </div>
 
                 <!-- Feriados Trabajados (Manual) -->
                 <div class="input-group">
                     <label for="feriados-trabajados" class="block text-sm font-medium text-[var(--text-color)]">Feriados Trabajados y NO Abonados (Cantidad)</label>
                     <input type="number" id="feriados-trabajados" value="0" min="0" onchange="saveBasicState()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm input-border-focus p-2 border" required>
-                    <p class="text-xs text-[var(--subtle-text)] mt-1">Cantidad total de feriados trabajados y no abonados en el período reclamado (asume 8hs por feriado).</p>
+                    <p class="text-xs text-[var(--subtle-text)] mt-1">Cantidad total de feriados trabajados y no abonados (asume 8hs por feriado).</p>
                 </div>
 
             </div>
@@ -336,7 +338,7 @@
             <div id="diferencias-results" class="mt-8 p-4 bg-gray-50 rounded-xl hidden border border-[var(--secondary-color)]">
                 <h3 class="text-xl font-semibold mb-4 text-[var(--primary-color)]">Resultado de la Deuda Salarial Total</h3>
                 <div class="flex justify-between items-center py-2 border-b border-gray-200">
-                    <span class="text-sm font-medium text-[var(--subtle-text)]">Monto Total de Diferencias Reclamadas (24 meses)</span>
+                    <span class="text-sm font-medium text-[var(--subtle-text)]">Monto Total de Diferencias Reclamadas (Incluye Sueldo y Horas)</span>
                     <span id="resultado-diferencias" class="text-lg font-bold text-[var(--primary-color)]">$ 0.00</span>
                 </div>
                 <p class="text-xs text-[var(--subtle-text)] mt-2">Este monto se trasladará a la Pestaña 2 para su inclusión en la Liquidación Final.</p>
@@ -391,13 +393,12 @@
                 </div>
                 <div class="input-group">
                     <label for="tope-salarial" class="block text-sm font-medium text-[var(--text-color)]">Tope Salarial CCT (Art. 245)</label>
-                    <!-- Eliminado required para permitir campo vacío (usan MRMNyH) -->
-                    <input type="number" id="tope-salarial" placeholder="Opcional. Dejar vacío si es igual al sueldo." onchange="saveBasicState()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border input-border-focus">
+                    <input type="number" id="tope-salarial" placeholder="Opcional: Dejar vacío si es igual al sueldo." onchange="saveBasicState()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border input-border-focus">
                 </div>
 
                 <!-- Nuevo Campo para Diferencias Salariales -->
                 <div class="input-group md:col-span-2">
-                    <label for="deuda-diferencias" class="block text-sm font-medium text-[var(--primary-color)]">Deuda por Diferencias Salariales (Horas, etc.)</label>
+                    <label for="deuda-diferencias" class="block text-sm font-medium text-[var(--primary-color)]">Deuda por Diferencias Salariales (CCT, Horas, etc.)</label>
                     <input type="number" id="deuda-diferencias" value="0" class="mt-1 block w-full rounded-md border-[var(--primary-color)] shadow-sm p-2 border bg-blue-50 text-[var(--primary-color)] font-bold" readonly>
                     <p class="text-xs text-[var(--subtle-text)] mt-1">Este valor se carga automáticamente desde la Pestaña 1.</p>
                 </div>
@@ -481,7 +482,7 @@
                             <span id="res-sac-proporcional">$ 0.00</span>
                         </div>
                         <div class="flex justify-between font-bold text-[var(--primary-color)]">
-                            <span class="text-sm">Deuda por Diferencias Salariales (Horas, Feriados)</span>
+                            <span class="text-sm">Deuda por Diferencias Salariales (CCT, Horas, Feriados)</span>
                             <span id="res-diferencias-deuda">$ 0.00</span>
                         </div>
                     </div>
@@ -510,14 +511,14 @@
 
                     <!-- Intereses y Total Final -->
                     <div class="border-t border-b py-4 mt-4 space-y-2">
-                            <div class="flex justify-between font-bold text-green-700">
-                                <span>Intereses Moratorios Aplicados</span>
-                                <span id="res-intereses">$ 0.00</span>
-                            </div>
-                            <div class="flex justify-between text-xl font-extrabold text-[var(--primary-color)]">
-                                <span>TOTAL ESTIMADO FINAL RECLAMABLE</span>
-                                <span id="res-total-final" class="text-2xl highlight-gold">$ 0.00</span>
-                            </div>
+                        <div class="flex justify-between font-bold text-green-700">
+                            <span>Intereses Moratorios Aplicados</span>
+                            <span id="res-intereses">$ 0.00</span>
+                        </div>
+                        <div class="flex justify-between text-xl font-extrabold text-[var(--primary-color)]">
+                            <span>TOTAL ESTIMADO FINAL RECLAMABLE</span>
+                            <span id="res-total-final" class="text-2xl highlight-gold">$ 0.00</span>
+                        </div>
                     </div>
                 </div>
                 <p class="text-xs text-[var(--subtle-text)] mt-4">NOTA: Este total es una estimación. Los intereses y la aplicación de multas deben ser confirmados por un profesional.</p>
@@ -529,39 +530,38 @@
 
         <!-- TAB: 3. Guía de Uso y Fundamentos -->
         <div id="guia-uso-tab" class="tab-content bg-white p-6 rounded-xl shadow-lg border border-gray-200 hidden">
-            <h2 class="text-2xl font-semibold mb-6 border-b pb-2 text-[var(--primary-color)]">3. Guía de Uso y Fundamentos Legales</h2>
+            <h2 class="text-2xl font-semibold mb-6 border-b pb-2 text-[var(--primary-color)]">3. Guía de Uso Rápida</h2>
             <div class="space-y-6 text-[var(--subtle-text)]">
                 <section>
-                    <h3 class="text-xl font-bold text-[var(--primary-color)] mb-2">Instrucciones de Uso Sencillas</h3>
-                    <p>Esta herramienta lo guía en dos pasos para obtener una estimación completa de la liquidación final por despido.</p>
+                    <h3 class="text-xl font-bold text-[var(--primary-color)] mb-2">Paso a Paso para la Liquidación</h3>
                     <ol class="list-decimal list-inside space-y-3 ml-4">
-                        <li><span class="font-bold">Pestaña 1 (Diferencias Salariales):</span> 
-                            <p class="ml-4 mt-1 text-sm">Use esta sección para calcular cualquier monto de dinero que el empleador le deba por salarios, horas extras o feriados no pagos en los últimos 2 años. Ingrese el sueldo bruto más alto del período y la **Base Horaria** de su convenio para establecer el valor de la hora. El resultado se guarda automáticamente.</p>
+                        <li><span class="font-bold">Pestaña 1 (Diferencias Salariales):</span>
+                            <ul class="list-disc list-inside ml-4 text-sm mt-1 space-y-1">
+                                <li>Ingrese el <span class="highlight-gold">Sueldo CCT</span> (lo que debería cobrar) y el <span class="highlight-gold">Sueldo Percibido</span> (lo que realmente cobró) para calcular la diferencia salarial base por el período reclamado.</li>
+                                <li>Ingrese el Sueldo Base para el cálculo del valor de la hora (MRMNyH) y la <span class="highlight-gold">Base Horaria del CCT</span>.</li>
+                                <li>Complete las horas extras, nocturnas y feriados no abonados en los últimos 24 meses.</li>
+                                <li>Presione <span class="highlight-gold">CALCULAR</span>. El monto total de deuda se traslada automáticamente.</li>
+                            </ul>
                         </li>
-                        <li><span class="font-bold">Pestaña 2 (Liquidación Final):</span> 
-                            <p class="ml-4 mt-1 text-sm">El monto de la **Deuda Salarial** (Pestaña 1) se traslada automáticamente aquí. Ingrese sus fechas de trabajo (Ingreso y Egreso) y los dos montos clave: la **MRMNyH** (Sueldo más alto del último año) y el **Tope Salarial** de su CCT. Si no conoce el tope, déjelo vacío; usaremos la MRMNyH.</p>
+                        <li><span class="font-bold">Pestaña 2 (Liquidación Final):</span>
+                            <ul class="list-disc list-inside ml-4 text-sm mt-1 space-y-1">
+                                <li>Complete los <span class="highlight-gold">Datos del Trabajador</span>, las <span class="highlight-gold">Fechas de Ingreso/Egreso</span> y el <span class="highlight-gold">MRMNyH</span>.</li>
+                                <li>El <span class="highlight-gold">Tope Salarial</span> es el tope que establece el Convenio para el Art. 245. **Si no lo conoce, déjelo vacío y se usará el MRMNyH.**</li>
+                                <li>Seleccione las multas aplicables (Art. 2, Art. 80, Art. 132 bis) e ingrese una <span class="highlight-gold">tasa de interés moratorio</span> (si aplica).</li>
+                                <li>Presione <span class="highlight-gold">CALCULAR LIQUIDACIÓN FINAL</span>.</li>
+                            </ul>
                         </li>
-                        <li><span class="font-bold">Multas y Cálculo:</span> 
-                            <p class="ml-4 mt-1 text-sm">Seleccione las **Multas** aplicables según la situación (por ejemplo, si no le entregaron el certificado de trabajo). Luego presione **CALCULAR LIQUIDACIÓN FINAL** para ver el detalle y el monto total.</p>
-                        </li>
+                        <li><span class="font-bold">Generación de PDF:</span> Verifique el <span class="highlight-gold">TOTAL ESTIMADO FINAL</span> y presione el botón de generar informe.</li>
                     </ol>
                 </section>
 
                 <section>
-                    <h3 class="text-xl font-bold text-[var(--primary-color)] mb-2">Glosario Legal (Conceptos Clave de la LCT)</h3>
-                    <ul class="list-disc list-inside space-y-3 ml-4">
-                        <li><span class="highlight-gold font-bold">MRMNyH (Mejor Remuneración Mensual Normal y Habitual):</span>
-                            <p class="ml-4 mt-1 text-sm">Es el sueldo bruto más alto que cobró el trabajador en el último año. Este monto se usa como base para la mayoría de las indemnizaciones, como el preaviso.</p>
-                        </li>
-                        <li><span class="highlight-gold font-bold">Tope Salarial (Art. 245):</span>
-                            <p class="ml-4 mt-1 text-sm">Es el límite máximo que se puede usar para calcular la Indemnización por Antigüedad. Este valor lo establece el Ministerio de Trabajo según el CCT. Si su MRMNyH es mayor a este tope, la indemnización se calcula usando el tope.</p>
-                        </li>
-                        <li><span class="highlight-gold font-bold">Antigüedad (Redondeo):</span>
-                            <p class="ml-4 mt-1 text-sm">Según la ley, si trabajó una fracción de tiempo mayor a 3 meses en el último año, ese año se cuenta como completo para la indemnización. Por ejemplo, si trabajó 4 años y 4 meses, se le pagan 5 años.</p>
-                        </li>
-                        <li><span class="highlight-gold font-bold">Multa Art. 2 Ley 25.323 (50%):</span>
-                            <p class="ml-4 mt-1 text-sm">Se aplica si el empleador no paga la liquidación final a tiempo y usted se ve obligado a hacer un reclamo judicial. Se suma un 50% extra sobre el monto de la indemnización base.</p>
-                        </li>
+                    <h3 class="text-xl font-bold text-[var(--primary-color)] mb-2">Consideraciones Clave del Cálculo</h3>
+                    <ul class="list-disc list-inside space-y-2 ml-4 text-sm">
+                        <li><span class="highlight-gold">Antigüedad (Art. 245):</span> Se redondea el año si la fracción trabajada excede los 3 meses (90 días).</li>
+                        <li><span class="highlight-gold">Base de Cálculo:</span> Siempre se toma el menor valor entre el MRMNyH y el Tope Salarial aplicable al Convenio.</li>
+                        <li><span class="highlight-gold">Días Base para Nocturnas:</span> Las diferencias por horas nocturnas se calculan en base a **26 días laborales** por mes reclamado.</li>
+                        <li><span class="highlight-gold">Multas:</span> Solo se incluyen si se marcan las casillas correspondientes.</li>
                     </ul>
                 </section>
             </div>
@@ -586,9 +586,7 @@
             style: 'currency',
             currency: 'ARS',
             minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
         });
-        window.formatter = formatter; // Make available globally
 
         // Function to switch tabs
         window.changeTab = (tabName) => {
@@ -604,18 +602,6 @@
         
         // Initial load: show the first tab
         document.addEventListener('DOMContentLoaded', () => {
-             // Ensure the global functions exist before trying to use them on load
-             if (typeof window.hideModal !== 'function') {
-                 // Fallback definition for the modal utility if not loaded via module
-                 window.showModal = (title, message) => {
-                    document.getElementById('modal-title').textContent = title;
-                    document.getElementById('modal-message').textContent = message;
-                    document.getElementById('custom-modal').classList.remove('hidden');
-                 };
-                 window.hideModal = () => {
-                    document.getElementById('custom-modal').classList.add('hidden');
-                 };
-             }
              changeTab('diferencias-salariales');
         });
 
@@ -641,8 +627,13 @@
          * --------------------------------------------------------
          */
         window.calculateSalaryDifferences = () => {
-            // Asegurar que los valores por defecto se toman si no hay input
+            // Sueldos para calcular diferencia salarial base
+            const sueldoCctMes = parseFloat(document.getElementById('sueldo-cct-mes').value) || 0;
+            const sueldoPercibidoMes = parseFloat(document.getElementById('sueldo-percibido-mes').value) || 0;
+            
+            // Base para cálculo de la hora normal y extras
             const sueldoBrutoMensual = parseFloat(document.getElementById('sueldo-bruto-mes').value || 0);
+            
             const mesesReclamar = parseInt(document.getElementById('meses-reclamar').value || 0);
             const horaEntrada = document.getElementById('hora-entrada').value;
             const horaSalida = document.getElementById('hora-salida').value;
@@ -651,57 +642,67 @@
             const feriadosTrabajados = parseInt(document.getElementById('feriados-trabajados').value || 0);
             const baseHorariaCCT = parseInt(document.getElementById('base-horaria').value || 200);
 
-            if (sueldoBrutoMensual <= 0 || mesesReclamar === 0 || mesesReclamar > 24 || baseHorariaCCT < 168) {
-                showModal('Datos Incompletos', 'Por favor, ingrese un Sueldo Bruto válido, la cantidad de meses (máx. 24) y una Base Horaria del CCT (mín. 168).');
+            if (!sueldoBrutoMensual || !mesesReclamar || mesesReclamar > 24 || baseHorariaCCT < 168) {
+                showModal('Datos Incompletos', 'Por favor, ingrese un Sueldo Base válido (MRMNyH), la cantidad de meses (máx. 24) y una Base Horaria del CCT (mín. 168).');
                 return;
             }
 
-            // 1. CÁLCULO DE VALOR DE HORA NORMAL
+            // 1. CÁLCULO DE DIFERENCIA SALARIAL BASE POR CONVENIO
+            const diferenciaSalarialBase = Math.max(0, sueldoCctMes - sueldoPercibidoMes);
+            // Multiplicamos por el período reclamado
+            const diferenciaSalarialTotal = diferenciaSalarialBase * mesesReclamar; 
+
+            // 2. CÁLCULO DE VALOR DE HORA NORMAL
             const valorHoraNormal = sueldoBrutoMensual / baseHorariaCCT;
 
-            // 2. CÁLCULO DE HORAS NOCTURNAS (21:00 a 06:00)
+            // 3. CÁLCULO DE HORAS NOCTURNAS (21:00 a 06:00)
             const NOCTURNO_START = 21;
             const NOCTURNO_END = 6;
-            const ADICIONAL_NOCTURNO = 0.1333; // 13.33% diferencia a reclamar
-            const DIAS_LABORABLES_MES = 21; // Estimate for working days
+            const ADICIONAL_NOCTURNO = 0.1333; // 13.33% diferencia a reclamar (8 horas por 7 trabajadas)
+            const DIAS_LABORABLES_MES = 26; // Usamos 26 días laborales mensuales para horas
 
             let horasNocturnasPorDia = 0;
             let totalHorasTrabajadas = calculateHoursDifference(horaEntrada, horaSalida);
 
-            // Calculate overlap with nocturnal hours (simplified)
+            // Calcular solapamiento con horas nocturnas (simplificado, hora por hora)
             for (let h = 0; h < totalHorasTrabajadas; h++) {
                 let entryHour = parseFloat(horaEntrada.split(':')[0]);
                 let hourOfDay = (entryHour + h) % 24;
 
                 if (hourOfDay >= NOCTURNO_START || hourOfDay < NOCTURNO_END) {
-                    horasNocturnasPorDia++;
+                    // Verificar si la hora completa cae en el período nocturno.
+                    // Esto es una simplificación; la lógica precisa es compleja, pero esta da una buena aproximación.
+                    if (hourOfDay >= NOCTURNO_START || hourOfDay < NOCTURNO_END) {
+                        horasNocturnasPorDia++;
+                    }
                 }
             }
             
             const totalHorasNocturnasPeriodo = horasNocturnasPorDia * DIAS_LABORABLES_MES * mesesReclamar;
             const diferenciaNocturna = totalHorasNocturnasPeriodo * valorHoraNormal * ADICIONAL_NOCTURNO;
             
-            // 3. CÁLCULO DE HORAS EXTRAS Y FERIADOS (Diferencia a reclamar)
+            // 4. CÁLCULO DE HORAS EXTRAS Y FERIADOS (Diferencia a reclamar)
             const diferenciaExtras50 = horasExtras50 * valorHoraNormal * 0.50;
             const diferenciaExtras100 = horasExtras100 * valorHoraNormal * 1.00;
 
             // Feriados no abonados (Asumimos 8 horas por feriado, se reclama el 100%)
             const diferenciaFeriados = feriadosTrabajados * 8 * valorHoraNormal * 1.00;
 
-            // 4. TOTALIZACIÓN
-            const totalDiferenciasSalariales = diferenciaNocturna + diferenciaExtras50 + diferenciaExtras100 + diferenciaFeriados;
+            // 5. TOTALIZACIÓN
+            const totalDiferenciasSalarialesHoras = diferenciaNocturna + diferenciaExtras50 + diferenciaExtras100 + diferenciaFeriados;
+            const totalDiferenciasSalarialesFinal = totalDiferenciasSalarialesHoras + diferenciaSalarialTotal;
             
             // Update Global State
-            window.currentDifferencesResult = totalDiferenciasSalariales;
+            window.currentDifferencesResult = totalDiferenciasSalarialesFinal;
 
             // Display Results in Tab 1
-            document.getElementById('resultado-diferencias').textContent = formatter.format(totalDiferenciasSalariales);
+            document.getElementById('resultado-diferencias').textContent = formatter.format(totalDiferenciasSalarialesFinal);
             document.getElementById('diferencias-results').classList.remove('hidden');
 
             // Pass result to Tab 2 and switch
-            document.getElementById('deuda-diferencias').value = totalDiferenciasSalariales.toFixed(2);
+            document.getElementById('deuda-diferencias').value = totalDiferenciasSalarialesFinal.toFixed(2);
             
-            showModal('Cálculo Realizado', `La Deuda Salarial de ${formatter.format(totalDiferenciasSalariales)} ha sido calculada y transferida a la Pestaña 2 para finalizar la liquidación.`);
+            showModal('Cálculo Realizado', `La Deuda Salarial de ${formatter.format(totalDiferenciasSalarialesFinal)} ha sido calculada y transferida a la Pestaña 2 para finalizar la liquidación.`);
             changeTab('indemnizacion');
             window.saveBasicState();
         };
@@ -716,9 +717,8 @@
             const fechaIngreso = document.getElementById('fecha-ingreso').value;
             const fechaEgreso = document.getElementById('fecha-egreso').value;
             let mrmnyh = parseFloat(document.getElementById('mrmnyh-sueldo').value || 0);
-            let topeSalarialInput = parseFloat(document.getElementById('tope-salarial').value || 0); // Input puede ser 0 si está vacío
+            let topeSalarialInput = document.getElementById('tope-salarial').value;
             const deudaDiferencias = parseFloat(document.getElementById('deuda-diferencias').value || 0);
-            
             // Checkboxes para las multas
             const multa25323Art2 = document.getElementById('multa-25323-2').checked;
             const multa25323Art80 = document.getElementById('multa-25323-80').checked;
@@ -727,8 +727,8 @@
             const interesAnual = parseFloat(document.getElementById('interes-anual').value || 0) / 100;
 
             // Validar que los campos críticos tengan valores
-            if (!fechaIngreso || !fechaEgreso || mrmnyh <= 0) {
-                showModal('Datos Incompletos', 'Por favor, complete las Fechas de Ingreso/Egreso y el MRMNyH. Estos no pueden estar vacíos o ser cero.');
+            if (!fechaIngreso || !fechaEgreso || mrmnyh === 0) {
+                showModal('Datos Incompletos', 'Por favor, complete las Fechas de Ingreso/Egreso y el MRMNyH. No pueden estar en cero.');
                 return;
             }
 
@@ -742,48 +742,40 @@
 
             // A. CÁLCULO DE ANTIGÜEDAD Y BASE DE CÁLCULO
             const diffTime = Math.abs(end - start);
-            const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
+            const MS_PER_YEAR = 1000 * 60 * 60 * 24 * 365.25;
+            const diffYears = diffTime / MS_PER_YEAR;
             const years = Math.floor(diffYears);
-            const months = Math.floor((diffYears - years) * 12);
+            // Calcular meses de diferencia para el display
+            let monthsTotal = Math.floor(diffYears * 12);
+            const months = monthsTotal % 12;
             const daysRemaining = Math.floor((diffYears * 365.25) - (years * 365.25) - (months * (365.25/12)));
-
 
             // Para Indemnización por Antigüedad: Art. 245
             let antiguedadAnios = years;
-            // Si la antigüedad es 3 meses o más en el último año, se redondea al año superior.
-            // Para el primer año, si trabajó 3 meses o más, se computa 1 año.
-            const totalDaysWorked = diffTime / (1000 * 60 * 60 * 24);
-            if (totalDaysWorked >= 90 && antiguedadAnios === 0) {
+            // Redondeo LCT (fracción mayor a 3 meses se considera 1 año completo)
+            if (months >= 3 || (antiguedadAnios === 0 && monthsTotal >= 3)) {
+                antiguedadAnios += 1;
+            } else if (antiguedadAnios === 0 && monthsTotal > 0) {
+                 // Si trabajó menos de 3 meses pero algo, se computa 1 año (caso desfavorable)
                  antiguedadAnios = 1;
-            } else if (months >= 3) {
-                 antiguedadAnios += 1;
-            } else if (antiguedadAnios === 0 && totalDaysWorked < 90) {
-                 antiguedadAnios = 0; // Menos de 90 días, no corresponde Art 245
             }
-            
-            // Determinar la Base de Cálculo (BCC): el menor entre MRMNyH y Tope Salarial
+
+            // Determinar la Base de Cálculo (BCC): Art. 245
+            // Si el tope salarial no se ingresó o es menor que la MRMNyH.
+            let topeSalarial = parseFloat(topeSalarialInput) || 0;
             let baseCalculoArt245 = mrmnyh; 
-            let topeSalarialDisplay = mrmnyh;
-
-            if (topeSalarialInput > 0 && topeSalarialInput < mrmnyh) {
-                baseCalculoArt245 = topeSalarialInput;
-                topeSalarialDisplay = topeSalarialInput;
-            } else {
-                 // Si tope es 0 o mayor a MRMNyH, se usa MRMNyH (se setea topeSalarialDisplay para el PDF)
-                 topeSalarialDisplay = mrmnyh;
+            
+            // Si el tope es un valor válido (no cero) Y es menor que la MRMNyH, se aplica el tope.
+            if (topeSalarial > 0 && topeSalarial < mrmnyh) {
+                 baseCalculoArt245 = topeSalarial;
             }
-
+            // Si topeSalarialInput está vacío, topeSalarial es 0, y baseCalculoArt245 sigue siendo mrmnyh (lo cual es correcto).
 
             // B. RUBROS INDEMNIZATORIOS BASE
             let indemAntiguedad = baseCalculoArt245 * antiguedadAnios;
 
             // Preaviso (Art. 232 LCT) - Mínimo 1 mes si antig. es < 5 años, 2 meses si es >= 5 años
-            let mesesPreaviso;
-            if (years === 0) {
-                 mesesPreaviso = 1; // 1 mes de preaviso si no hay antigüedad, típicamente.
-            } else {
-                 mesesPreaviso = years < 5 ? 1 : 2; 
-            }
+            let mesesPreaviso = years < 5 ? 1 : 2; // Use actual years for preaviso length
             let indemPreaviso = baseCalculoArt245 * mesesPreaviso;
 
             // Integración Mes Despido (Art. 233 LCT)
@@ -791,12 +783,12 @@
             const lastDayOfMonth = new Date(end.getFullYear(), end.getMonth() + 1, 0).getDate();
             const daysToIntegrate = lastDayOfMonth - dayOfEgress;
             let indemIntegracion = (baseCalculoArt245 / lastDayOfMonth) * daysToIntegrate;
-            if (indemIntegracion < 0) indemIntegracion = 0; 
-            if (indemIntegracion > baseCalculoArt245) indemIntegracion = baseCalculoArt245; // Max 1 mes
+            if (indemIntegracion < 0) indemIntegracion = 0; // Evitar valores negativos
 
             // C. OTROS RUBROS
             // Vacaciones No Gozadas (Art. 150/156 LCT)
             const daysWorkedThisYear = Math.ceil((end - new Date(end.getFullYear(), 0, 1)) / (1000 * 60 * 60 * 24));
+            
             let daysEntitlement = 14;
             if (years >= 5 && years < 10) daysEntitlement = 21;
             else if (years >= 10 && years < 20) daysEntitlement = 28;
@@ -806,9 +798,10 @@
             let indemVacaciones = (baseCalculoArt245 / 25) * proportionalVacationDays; // Indemnizatory divisor is 25
 
             // SAC Proporcional (Art. 121 LCT)
-            const monthsWorkedThisSemester = (end.getMonth() >= 6) ? (end.getMonth() - 5) + (end.getDate()/30.4375) : (end.getMonth() + 1) + (end.getDate()/30.4375);
-            let indemSacProporcional = (mrmnyh * monthsWorkedThisSemester) / 12;
-            
+            const currentMonth = end.getMonth();
+            const monthsWorkedThisSemester = (currentMonth >= 6) ? (currentMonth - 5) : (currentMonth + 1);
+            let indemSacProporcional = (mrmnyh / 12) * monthsWorkedThisSemester;
+
             // SAC sobre Indemnización por Preaviso y Integración (se consideran remuneraciones)
             let sacPreaviso = indemPreaviso * 0.0833;
             let sacIntegracion = indemIntegracion * 0.0833;
@@ -884,100 +877,113 @@
             document.getElementById('res-total-final').textContent = formatter.format(totalFinal);
 
             document.getElementById('indemnizacion-results').classList.remove('hidden');
-            
-            // Guardamos los datos para el PDF
-            window.pdfData = {
-                nombreTrabajador: document.getElementById('nombre-trabajador').value || 'N/A',
-                dniTrabajador: document.getElementById('dni-trabajador').value || 'N/A',
-                cuitTrabajador: document.getElementById('cuit-trabajador').value || 'N/A',
-                cctAplicable: document.getElementById('cct-aplicable').value || 'N/A',
-                profesionTrabajador: document.getElementById('profesion-trabajador').value || 'N/A',
-                fechaIngreso: fechaIngreso,
-                fechaEgreso: fechaEgreso,
-                mrmnyh: mrmnyh,
-                topeSalarialDisplay: topeSalarialDisplay, // Usamos el valor efectivo
-                antiguedadDisplay: `${years} años, ${months} meses (${daysRemaining} días)`,
-                deudaDiferencias: deudaDiferencias,
-                interesAnual: interesAnual * 100,
-            };
 
-            // Save state
+            // Save state of MRMNyH and Tope Salarial
             window.saveBasicState();
         };
 
         /**
          * --------------------------------------------------------
-         * GENERACIÓN DE PDF (Corregida la referencia de datos)
+         * GENERACIÓN DE PDF
          * --------------------------------------------------------
          */
         window.generatePDF = async () => {
-            // Check for jsPDF availability
+            // Check for jsPDF availability and initialize the constructor
             if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined') {
-                showModal('Error de PDF', 'La librería de PDF no está disponible. Por favor, intente recargar la página.');
-                return;
-            }
-            if (!window.pdfData) {
-                showModal('Cálculo Faltante', 'Debe presionar "CALCULAR LIQUIDACIÓN FINAL" antes de generar el informe.');
-                return;
+                 showModal('Error de PDF', 'La librería jsPDF no pudo ser inicializada. Por favor, intente recargar la página.');
+                 return;
             }
 
-            // Acceder al constructor desde el objeto global window.jspdf de forma robusta
+            const { jsPDF } = window.jspdf;
+            
+            // Intentamos inicializar el objeto jsPDF
             try {
-                // Uso directo del constructor del objeto global jspdf.
-                const jsPDF = window.jspdf.jsPDF; 
-                if (typeof jsPDF === 'undefined') {
-                    throw new Error("Constructor jsPDF no disponible.");
-                }
                 const doc = new jsPDF();
-                
                 const margin = 15;
                 let y = margin;
                 const lineHeight = 7;
                 const maxWidth = 180;
-                const data = window.pdfData;
                 
-                // --- Función para obtener el texto del rubro y asegurarnos de que sea string ---
-                const getRubroText = (id) => String(document.getElementById(id).textContent);
-
-
-                // 1. HEADER AND LOGO (ND Placeholder)
-                y += 5;
-                doc.setFontSize(24);
-                doc.setFont('helvetica', 'bold');
-                doc.setTextColor(31, 58, 101); // Navy Deep (RGB)
+                // --- Data Acquisition ---
+                // Nota: Usamos textContent y lo convertimos a String() para evitar errores de argumentos.
+                const totalFinal = String(document.getElementById('res-total-final').textContent);
+                const baseCalculo = String(document.getElementById('res-base-calculo').textContent);
+                const antiguedad = String(document.getElementById('res-antiguedad').textContent);
+                const totalDiferencias = String(document.getElementById('res-diferencias-deuda').textContent);
                 
-                // --- AJUSTE DE ALINEACIÓN DEL LOGO ---
-                const logoX = margin + 5; // Centro del círculo en X
-                const logoY = y + 5;      // Centro del círculo en Y
+                // Worker Data
+                const nombreTrabajador = String(document.getElementById('nombre-trabajador').value || 'N/A');
+                const dniTrabajador = String(document.getElementById('dni-trabajador').value || 'N/A');
+                const cuitTrabajador = String(document.getElementById('cuit-trabajador').value || 'N/A');
+                const cctAplicable = String(document.getElementById('cct-aplicable').value || 'N/A');
+                const profesionTrabajador = String(document.getElementById('profesion-trabajador').value || 'N/A');
+                const fechaIngreso = String(document.getElementById('fecha-ingreso').value);
+                const fechaEgreso = String(document.getElementById('fecha-egreso').value);
+                const mrmnyh = String(document.getElementById('mrmnyh-sueldo').value);
+                const topeSalarial = String(document.getElementById('tope-salarial').value || 'N/A');
+                const interesAnual = String(document.getElementById('interes-anual').value);
 
-                // Dibujar Círculo (Gold Accent)
-                doc.setDrawColor(212, 173, 107); // Gold Accent (RGB)
-                doc.setLineWidth(1);
-                doc.circle(logoX, logoY, 8); // Círculo centrado en (logoX, logoY)
+                // Rubros (use textContent from the results section)
+                const rubros = [
+                    { name: 'MRMNyH (Sueldo Base)', value: formatter.format(mrmnyh) },
+                    { name: 'Tope Salarial CCT Aplicado', value: topeSalarial === 'N/A' ? 'N/A' : formatter.format(topeSalarial) },
+                    { name: 'Antigüedad Reconocida', value: antiguedad },
+                    { name: 'Base de Cálculo (Art. 245)', value: baseCalculo },
+                    { name: 'Indemnización por Antigüedad', value: String(document.getElementById('res-antiguedad-monto').textContent) },
+                    { name: 'Indemnización por Preaviso (+ SAC y Vacaciones)', value: String(document.getElementById('res-preaviso-monto').textContent) },
+                    { name: 'Integración Mes Despido (+ SAC)', value: String(document.getElementById('res-integracion-monto').textContent) },
+                    { name: 'Vacaciones No Gozadas Proporcionales', value: String(document.getElementById('res-vacaciones-monto').textContent) },
+                    { name: 'SAC Proporcional sobre Haberes', value: String(document.getElementById('res-sac-proporcional').textContent) },
+                    { name: 'Deuda por Diferencias Salariales (CCT, Horas, Feriados)', value: totalDiferencias },
+                    { name: 'SUBTOTAL BRUTO SIN MULTAS', value: String(document.getElementById('res-subtotal-bruto').textContent), bold: true },
+                ];
 
-                // Texto "ND"
-                doc.setTextColor(31, 58, 101); // Navy Deep (RGB)
-                // Usamos text con align: 'center' para centrar el texto dentro del círculo
-                doc.text("ND", logoX, logoY + 2, { align: 'center' }); 
+                // Add multas only if visible/checked in the results section
+                if (!document.getElementById('res-multa-2-row').classList.contains('hidden')) {
+                    rubros.push({ name: 'Multa Art. 2 Ley 25.323 (50% sobre Indemnización Base)', value: String(document.getElementById('res-multa-2').textContent) });
+                }
+                if (!document.getElementById('res-multa-80-row').classList.contains('hidden')) {
+                    rubros.push({ name: 'Multa Art. 80 LCT (3 MRMNyH)', value: String(document.getElementById('res-multa-80').textContent) });
+                }
+                if (!document.getElementById('res-multa-132bis-row').classList.contains('hidden')) {
+                    rubros.push({ name: 'Multa Art. 132 bis LCT (Duplicación)', value: String(document.getElementById('res-multa-132bis-monto').textContent) });
+                }
+
+                rubros.push(
+                    { name: `Intereses Moratorios Aplicados (${interesAnual}%)`, value: String(document.getElementById('res-intereses').textContent), color: '#33A03E' },
+                    { name: 'TOTAL ESTIMADO FINAL RECLAMABLE', value: totalFinal, bold: true, size: 14, color: '#1F3A65' }
+                );
+
+
+                // 1. HEADER AND LOGO
                 
-                doc.setTextColor(0); // Black
-
-                // Títulos
-                const titleX = margin + 35; // Posición de inicio del título
+                // Draw simple "ND" logo (Navy/Gold style)
+                doc.setFont('times', 'bold');
+                doc.setFontSize(30);
+                doc.setTextColor('#D4AD6B'); // Gold
+                doc.text("N", margin + 18, y + 10);
+                doc.setTextColor('#1F3A65'); // Navy
+                doc.text("D", margin + 30, y + 10);
+                y += 10;
+                
                 doc.setFontSize(18);
                 doc.setFont('helvetica', 'bold');
-                doc.text("INFORME DE LIQUIDACIÓN LABORAL", titleX, y + 5);
+                doc.setTextColor('#1F3A65');
+                doc.text("INFORME DE LIQUIDACIÓN LABORAL", margin + 60, y);
                 
+                y += lineHeight;
+
                 doc.setFontSize(10);
                 doc.setFont('helvetica', 'normal');
-                doc.text("NANCI DE MORAIZ - ASESORAMIENTO JURÍDICO INTEGRAL", titleX, y + 12);
+                doc.setTextColor(0); // Black
+                doc.text("NANCI DE MORAIZ - ASESORAMIENTO JURÍDICO INTEGRAL", margin + 60, y);
                 
-                y += 25; // Move down past header
+                y += 20; // Move down past header
 
                 // 2. DATOS DEL TRABAJADOR
                 doc.setFontSize(14);
                 doc.setFont('helvetica', 'bold');
-                doc.setTextColor(31, 58, 101); // Navy
+                doc.setTextColor('#1F3A65'); // Navy
                 doc.text("DATOS DEL TRABAJADOR Y EMPLEO", margin, y);
                 y += lineHeight;
 
@@ -986,21 +992,19 @@
                 doc.setTextColor(0); // Black
 
                 const workerData = [
-                    `Nombre: ${data.nombreTrabajador}`,
-                    `DNI: ${data.dniTrabajador} / CUIT: ${data.cuitTrabajador}`,
-                    `Profesión: ${data.profesionTrabajador} - CCT: ${data.cctAplicable}`,
-                    `Fecha Ingreso: ${data.fechaIngreso} - Fecha Egreso: ${data.fechaEgreso}`,
+                    `Nombre: ${nombreTrabajador} | DNI: ${dniTrabajador} | CUIT: ${cuitTrabajador}`,
+                    `Profesión: ${profesionTrabajador} | CCT Aplicable: ${cctAplicable}`,
+                    `Fecha Ingreso: ${fechaIngreso} | Fecha Egreso: ${fechaEgreso}`,
                 ];
 
-                // Modificación: Asegurar que cada elemento de la lista sea un string
-                doc.text(workerData.map(item => String(item)), margin, y, { lineHeightFactor: 1.5, maxWidth: maxWidth });
+                doc.text(workerData, margin, y, { lineHeightFactor: 1.5, maxWidth: maxWidth });
                 y += (workerData.length * lineHeight * 0.75) + 5;
 
 
                 // 3. DETALLE DE RUBROS
                 doc.setFontSize(14);
                 doc.setFont('helvetica', 'bold');
-                doc.setTextColor(31, 58, 101); // Navy
+                doc.setTextColor('#1F3A65'); // Navy
                 doc.text("DETALLE DE RUBROS Y MONTOS", margin, y);
                 y += lineHeight;
                 
@@ -1008,90 +1012,62 @@
                 doc.setFont('helvetica', 'normal');
 
                 // Draw table lines and entries
-                doc.setDrawColor(212, 173, 107); // Gold
+                doc.setDrawColor('#D4AD6B'); // Gold
                 doc.setLineWidth(0.5);
                 doc.line(margin, y, margin + maxWidth, y); // Top line
 
-                const rubros = [
-                    { name: 'MRMNyH (Sueldo Base)', value: formatter.format(data.mrmnyh) },
-                    { name: 'Tope Salarial CCT Aplicado', value: formatter.format(data.topeSalarialDisplay) },
-                    { name: 'Antigüedad Reconocida', value: String(data.antiguedadDisplay) }, // Asegurar string
-                    { name: 'Base de Cálculo (Art. 245)', value: getRubroText('res-base-calculo') },
-                    { name: 'Indemnización por Antigüedad', value: getRubroText('res-antiguedad-monto') },
-                    { name: 'Indemnización por Preaviso (+ SAC y Vacaciones)', value: getRubroText('res-preaviso-monto') },
-                    { name: 'Integración Mes Despido (+ SAC)', value: getRubroText('res-integracion-monto') },
-                    { name: 'Vacaciones No Gozadas Proporcionales', value: getRubroText('res-vacaciones-monto') },
-                    { name: 'SAC Proporcional sobre Haberes', value: getRubroText('res-sac-proporcional') },
-                    { name: 'Deuda por Diferencias Salariales (Pestaña 1)', value: getRubroText('res-diferencias-deuda'), color: '#1F3A65' },
-                    { name: 'SUBTOTAL BRUTO SIN MULTAS', value: getRubroText('res-subtotal-bruto'), bold: true },
-                ];
-                
-                // Add multas only if checked (using the visibility of the results rows)
-                if (!document.getElementById('res-multa-2-row').classList.contains('hidden')) {
-                    rubros.push({ name: 'Multa Art. 2 Ley 25.323 (50% sobre Indemnización Base)', value: getRubroText('res-multa-2') });
-                }
-                if (!document.getElementById('res-multa-80-row').classList.contains('hidden')) {
-                    rubros.push({ name: 'Multa Art. 80 LCT (3 MRMNyH)', value: getRubroText('res-multa-80') });
-                }
-                if (!document.getElementById('res-multa-132bis-row').classList.contains('hidden')) {
-                    rubros.push({ name: 'Multa Art. 132 bis LCT (Duplicación)', value: getRubroText('res-multa-132bis-monto') });
-                }
-
-                rubros.push(
-                    { name: `Intereses Moratorios Aplicados (${data.interesAnual}%)`, value: getRubroText('res-intereses'), color: '#33A03E' },
-                    { name: 'TOTAL ESTIMADO FINAL RECLAMABLE', value: getRubroText('res-total-final'), bold: true, size: 14, color: '#1F3A65' }
-                );
-
                 rubros.forEach(item => {
+                    // Check for page overflow
+                    if (y > doc.internal.pageSize.height - margin * 2) {
+                        doc.addPage();
+                        y = margin;
+                        doc.setFontSize(14);
+                        doc.setFont('helvetica', 'bold');
+                        doc.setTextColor('#1F3A65'); 
+                        doc.text("CONTINUACIÓN DEL DETALLE DE RUBROS", margin, y);
+                        y += lineHeight;
+                        doc.setFontSize(10);
+                        doc.setFont('helvetica', 'normal');
+                        doc.setTextColor(0);
+                    }
+
                     y += lineHeight;
 
-                    doc.setFont('helvetica', item.bold ? 'bold' : 'normal');
-                    // Use RGB values for color settings in jsPDF
-                    const hexToRgb = (hex) => {
-                        let bigint = parseInt(hex.slice(1), 16);
-                        let r = (bigint >> 16) & 255;
-                        let g = (bigint >> 8) & 255;
-                        let b = bigint & 255;
-                        return [r, g, b];
-                    };
+                    // Adjust font style and color for totals/highlights
+                    if (item.bold) {
+                        doc.setFont('helvetica', 'bold');
+                        doc.setTextColor(item.color ? item.color : '#1F3A65');
+                        doc.setFontSize(item.size || 10);
+                    } else {
+                        doc.setFont('helvetica', 'normal');
+                        doc.setTextColor(item.color ? item.color : 0); // Black or specified color
+                        doc.setFontSize(10);
+                    }
                     
-                    // Modificación: Setear color en jsPDF con RGB
-                    const rgbColor = item.color ? hexToRgb(item.color) : [0, 0, 0];
-                    doc.setTextColor(rgbColor[0], rgbColor[1], rgbColor[2]);
-
-                    doc.setFontSize(item.size || 10);
-
                     // Left Column (Rubro Name)
                     doc.text(String(item.name), margin + 2, y);
+                    
                     // Right Column (Amount)
                     doc.text(String(item.value), margin + maxWidth - 2, y, { align: 'right' });
 
                     if (item.name === 'TOTAL ESTIMADO FINAL RECLAMABLE') {
-                        doc.setDrawColor(31, 58, 101); // Navy
+                        doc.setDrawColor('#1F3A65'); // Navy
                         doc.setLineWidth(0.8);
                         doc.line(margin, y + 1, margin + maxWidth, y + 1); // Final line
                     }
                 });
 
-                y += 5;
-
                 // 4. FOOTER / DISCLAIMER
+                y = doc.internal.pageSize.height - 10;
                 doc.setFontSize(8);
                 doc.setFont('helvetica', 'italic');
-                doc.setTextColor(100); // Gray (Simplified: jsPDF takes a number for gray scale)
-                doc.text(`Generado el: ${new Date().toLocaleDateString('es-AR')} a las ${new Date().toLocaleTimeString('es-AR')}.`, margin, doc.internal.pageSize.height - 10);
-                // LÍNEA ELIMINADA: doc.text("Este informe es una ESTIMACIÓN preliminar. Consulte a un profesional para la liquidación final y aplicación de la legislación vigente.", margin, doc.internal.pageSize.height - 5);
+                doc.setTextColor(100); // Gray
+                doc.text(`Generado el: ${new Date().toLocaleDateString('es-AR')} a las ${new Date().toLocaleTimeString('es-AR')}.`, margin, y);
 
-
-                doc.save(`Liquidacion_NanciDeMoraiz_${data.nombreTrabajador.replace(/\s/g, '_')}.pdf`);
-            } catch (error) {
-                console.error("Error al generar el PDF:", error);
-                // Si la excepción es el error de argumento, mostramos un mensaje específico
-                const errorMessage = error.message.includes("Invalid argument passed") 
-                    ? "Error de formato de datos en el informe. Verifique que todos los campos de entrada estén calculados."
-                    : error.message;
-
-                showModal('Error de Generación de PDF', 'Hubo un error al intentar crear el documento. Asegúrese de haber calculado la liquidación final primero. Detalle: ' + errorMessage);
+                doc.save(`Liquidacion_NanciDeMoraiz_${nombreTrabajador.replace(/\s/g, '_')}.pdf`);
+            } catch (e) {
+                console.error("Error during PDF generation:", e);
+                showModal('Error Grave de PDF', `No se pudo crear el documento PDF. Detalle: ${e.message}`);
             }
         };
         
@@ -1099,7 +1075,6 @@
 
 </body>
 </html>
-
 
 
 
