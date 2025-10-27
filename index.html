@@ -61,8 +61,8 @@
         
         <!-- HEADER AND BRANDING (Updated with Navy/Gold Theme and Logo) -->
         <header class="text-center mb-6 p-4 bg-white rounded-xl shadow-lg border-t-8 border-[var(--primary-color)]">
-            <!-- LOGO INCORPORADO EN BASE64 -->
-            <img id="app-logo" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/4QAiRXhpZgAATU0AKgAAAAgAAQESAAMAAAABAAEAAAAAAAD/2wBDAAIBAQIBAQICAgICAgICAwUDAwMDAwYEBAMFBwYHBwcGBwcICQsJCAgKCAcHCg0KCgsMDAwMBwkODw0MDgsMDAz/2wBDAQICAgMDAwYDAwYMCAcIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAz/wAARCAEIAQgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmpuDiIWOh4iKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4eLj5OXm5+jp6vLz9PX29/h5eoY-Hi4+Tl5ufo6ery8/T19fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjNTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmpuDiIWOh4iKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxVv3/x/x/wD/2Q==" alt="Nanci De Moraiz Logo" class="mx-auto h-16 mb-2">
+            <!-- LOGO INCORPORADO EN BASE64 (Aseguramos que el tipo MIME sea PNG/JPEG según el original) -->
+            <img id="app-logo" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/4QAiRXhpZgAATU0AKgAAAAgAAQESAAMAAAABAAEAAAAAAAD/2wBDAAIBAQIBAQICAgICAgICAwUDAwMDAwYEBAMFBwYHBwcGBwcICQsJCAgKCAcHCg0KCgsMDAwMBwkODw0MDgsMDAz/2wBDAQICAgMDAwYDAwYMCAcIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAz/wAARCAEIAQgDASIAAhEBAEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmpuDiIWOh4iKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4eLj5OXm5+jp6vLz9PX29/h5eoY-Hi4+Tl5ufo6ery8/T19fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjNTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmpuDiIWOh4iKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxVv3/x/x/wD/2Q==" alt="Nanci De Moraiz Logo" class="mx-auto h-16 mb-2">
             <h1 class="text-2xl font-extrabold main-title pt-1">Calculadora de Liquidación Laboral (LCT)</h1>
             <p class="text-sm highlight-gold">Nanci De Moraiz - Asesoramiento Jurídico Integral</p>
         </header>
@@ -94,9 +94,9 @@
 
             // Initialize Firebase only if config is available
             if (Object.keys(firebaseConfig).length > 0) {
-                const app = initializeApp(firebaseConfig);
-                window.db = getFirestore(app);
-                window.auth = getAuth(app);
+                window.app = initializeApp(firebaseConfig);
+                window.db = getFirestore(window.app);
+                window.auth = getAuth(window.app);
             } else {
                 console.warn("Firebase config not found. State saving disabled.");
                 window.db = null;
@@ -145,7 +145,7 @@
 
             // Firestore Data Listener (Saves and loads basic state)
             function listenForData() {
-                if (!window.db || !window.userId) return;
+                if (!window.db || !window.userId || !window.isAuthReady) return;
 
                 const docRef = doc(window.db, "artifacts", appId, "users", window.userId, "calculadora", "state");
 
@@ -159,11 +159,18 @@
                         document.getElementById('cuit-trabajador').value = data.cuitTrabajador || '';
                         document.getElementById('cct-aplicable').value = data.cctAplicable || '';
                         document.getElementById('profesion-trabajador').value = data.profesionTrabajador || '';
-                        document.getElementById('mrmnyh-sueldo').value = data.mrmnyh || '';
-                        document.getElementById('tope-salarial').value = data.topeSalarial || '';
+                        // Asegurar que los valores numéricos se carguen como números o 0
+                        document.getElementById('mrmnyh-sueldo').value = data.mrmnyh || '0';
+                        document.getElementById('tope-salarial').value = data.topeSalarial || '0';
+                        
+                        // Load Multa Checkboxes
+                        document.getElementById('multa-25323-2').checked = data.multa25323Art2Checked === true;
+                        document.getElementById('multa-25323-80').checked = data.multa25323Art80Checked === true;
+                        document.getElementById('multa-132bis').checked = data.multa132bisChecked === true;
+
 
                         // Load data for Tab 1
-                        document.getElementById('sueldo-bruto-mes').value = data.sueldoBrutoMes || '';
+                        document.getElementById('sueldo-bruto-mes').value = data.sueldoBrutoMes || '0';
                         document.getElementById('base-horaria').value = data.baseHoraria || '200';
                         document.getElementById('horas-extras-50').value = data.horasExtras50 || '0';
                         document.getElementById('horas-extras-100').value = data.horasExtras100 || '0';
@@ -189,6 +196,11 @@
                         mrmnyh: document.getElementById('mrmnyh-sueldo').value,
                         topeSalarial: document.getElementById('tope-salarial').value,
                         
+                        // Multa Checkboxes
+                        multa25323Art2Checked: document.getElementById('multa-25323-2').checked,
+                        multa25323Art80Checked: document.getElementById('multa-25323-80').checked,
+                        multa132bisChecked: document.getElementById('multa-132bis').checked,
+
                         // Tab 1 Base Data
                         sueldoBrutoMes: document.getElementById('sueldo-bruto-mes').value,
                         baseHoraria: document.getElementById('base-horaria').value,
@@ -317,11 +329,11 @@
                 <!-- Data Input Fields -->
                 <div class="input-group">
                     <label for="fecha-ingreso" class="block text-sm font-medium text-[var(--text-color)]">Fecha de Ingreso</label>
-                    <input type="date" id="fecha-ingreso" value="2022-01-01" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border input-border-focus" required>
+                    <input type="date" id="fecha-ingreso" value="2022-01-01" onchange="saveBasicState()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border input-border-focus" required>
                 </div>
                 <div class="input-group">
                     <label for="fecha-egreso" class="block text-sm font-medium text-[var(--text-color)]">Fecha de Egreso / Fecha de Liquidación</label>
-                    <input type="date" id="fecha-egreso" value="2024-01-01" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border input-border-focus" required>
+                    <input type="date" id="fecha-egreso" value="2024-01-01" onchange="saveBasicState()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border input-border-focus" required>
                 </div>
                 <div class="input-group">
                     <label for="mrmnyh-sueldo" class="block text-sm font-medium text-[var(--text-color)]">MRMNyH (Art. 245) - Sueldo Base</label>
@@ -341,11 +353,25 @@
 
                 <div class="input-group md:col-span-2 border-t pt-4">
                     <h3 class="text-lg font-semibold mb-4 text-[var(--primary-color)]">Multas e Intereses</h3>
+                    
+                    <!-- Multa Art. 2 Ley 25.323 -->
+                    <div class="flex items-center mb-2">
+                        <input id="multa-25323-2" type="checkbox" onchange="saveBasicState()" class="h-4 w-4 text-[var(--primary-color)] border-gray-300 rounded focus:ring-[var(--primary-color)]">
+                        <label for="multa-25323-2" class="ml-2 block text-sm font-medium text-[var(--text-color)]">Multa Art. 2 Ley 25.323 (50% por reclamo judicial)</label>
+                    </div>
+
+                    <!-- Multa Art. 80 LCT -->
+                    <div class="flex items-center mb-2">
+                        <input id="multa-25323-80" type="checkbox" onchange="saveBasicState()" class="h-4 w-4 text-[var(--primary-color)] border-gray-300 rounded focus:ring-[var(--primary-color)]">
+                        <label for="multa-25323-80" class="ml-2 block text-sm font-medium text-[var(--text-color)]">Multa Art. 80 LCT (3x MRMNyH por falta de entrega de certificado)</label>
+                    </div>
+
                     <!-- Multa Art. 132 bis LCT -->
                     <div class="flex items-center mb-2">
-                        <input id="multa-132bis" type="checkbox" class="h-4 w-4 text-[var(--primary-color)] border-gray-300 rounded focus:ring-[var(--primary-color)]">
+                        <input id="multa-132bis" type="checkbox" onchange="saveBasicState()" class="h-4 w-4 text-[var(--primary-color)] border-gray-300 rounded focus:ring-[var(--primary-color)]">
                         <label for="multa-132bis" class="ml-2 block text-sm font-medium text-[var(--text-color)]">Multa Art. 132 bis LCT (Duplicación por falta de aportes)</label>
                     </div>
+
 
                     <!-- Intereses Moratorios -->
                     <div class="flex items-center space-x-4 mt-4">
@@ -417,11 +443,11 @@
                         </div>
 
                         <h4 class="text-md font-semibold text-[var(--primary-color)] pt-2">Multas LCT</h4>
-                        <div class="flex justify-between">
+                        <div id="res-multa-2-row" class="flex justify-between hidden">
                             <span class="text-sm">Multa Art. 2 Ley 25.323 (50% sobre Indemnización Base)</span>
                             <span id="res-multa-2">$ 0.00</span>
                         </div>
-                        <div class="flex justify-between">
+                        <div id="res-multa-80-row" class="flex justify-between hidden">
                             <span class="text-sm">Multa Art. 80 LCT (3 x MRMNyH)</span>
                             <span id="res-multa-80">$ 0.00</span>
                         </div>
@@ -459,7 +485,7 @@
                     <ol class="list-decimal list-inside space-y-2 ml-4">
                         <li><span class="font-bold">Pestaña 1 (Diferencias Salariales):</span> Ingrese el Sueldo Bruto Mensual (MRMNyH) y la <span class="highlight-gold">Base Horaria del CCT</span>. Luego, ingrese el total de las horas extras, nocturnas y feriados no abonados en los últimos 24 meses. Presione <span class="highlight-gold">CALCULAR</span> para obtener la Deuda Salarial Total.</li>
                         <li><span class="font-bold">Pestaña 2 (Liquidación Final):</span> La deuda salarial se trasladará automáticamente al campo <span class="highlight-gold">"Deuda por Diferencias Salariales"</span>. Complete los <span class="highlight-gold">Datos del Trabajador</span> y los datos de la relación laboral (fechas, MRMNyH, Tope Salarial).</li>
-                        <li>Seleccione las multas aplicables (Art. 2, Art. 80, Art. 132 bis) e ingrese una tasa de interés moratorio (sugerido por el profesional).</li>
+                        <li><span class="font-bold">Multas:</span> Seleccione las multas aplicables (Art. 2, Art. 80, Art. 132 bis) e ingrese una tasa de interés moratorio (sugerido por el profesional).</li>
                         <li>Presione <span class="highlight-gold">CALCULAR LIQUIDACIÓN FINAL</span> para obtener el monto total reclamable.</li>
                     </ol>
                 </section>
@@ -556,6 +582,7 @@
          * --------------------------------------------------------
          */
         window.calculateSalaryDifferences = () => {
+            // Asegurar que los valores por defecto se toman si no hay input
             const sueldoBrutoMensual = parseFloat(document.getElementById('sueldo-bruto-mes').value || 0);
             const mesesReclamar = parseInt(document.getElementById('meses-reclamar').value || 0);
             const horaEntrada = document.getElementById('hora-entrada').value;
@@ -617,6 +644,7 @@
             
             showModal('Cálculo Realizado', `La Deuda Salarial de ${formatter.format(totalDiferenciasSalariales)} ha sido calculada y transferida a la Pestaña 2 para finalizar la liquidación.`);
             changeTab('indemnizacion');
+            window.saveBasicState();
         };
 
 
@@ -631,11 +659,16 @@
             let mrmnyh = parseFloat(document.getElementById('mrmnyh-sueldo').value || 0);
             let topeSalarial = parseFloat(document.getElementById('tope-salarial').value || 0);
             const deudaDiferencias = parseFloat(document.getElementById('deuda-diferencias').value || 0);
+            // Checkboxes para las multas
+            const multa25323Art2 = document.getElementById('multa-25323-2').checked;
+            const multa25323Art80 = document.getElementById('multa-25323-80').checked;
             const multa132bis = document.getElementById('multa-132bis').checked;
+            
             const interesAnual = parseFloat(document.getElementById('interes-anual').value || 0) / 100;
 
-            if (!fechaIngreso || !fechaEgreso || !mrmnyh || !topeSalarial) {
-                showModal('Datos Incompletos', 'Por favor, complete las Fechas de Ingreso/Egreso, el MRMNyH y el Tope Salarial para calcular la liquidación.');
+            // Validar que los campos críticos tengan valores (incluso 0)
+            if (!fechaIngreso || !fechaEgreso || mrmnyh === 0 || topeSalarial === 0) {
+                showModal('Datos Incompletos', 'Por favor, complete las Fechas de Ingreso/Egreso, el MRMNyH y el Tope Salarial. No pueden estar en cero.');
                 return;
             }
 
@@ -652,16 +685,18 @@
             const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
             const years = Math.floor(diffYears);
             const months = Math.floor((diffYears - years) * 12);
+            // Calculamos días restantes para el redondeo a 3 meses para el año superior (LCT Art. 245)
             const daysRemaining = Math.floor((diffYears * 365.25) - (years * 365.25) - (months * (365.25/12)));
 
 
             // Para Indemnización por Antigüedad: Art. 245
             let antiguedadAnios = years;
             // Si la antigüedad es 3 meses o más en el último año, se redondea al año superior.
+            // Para el primer año, si trabajó 3 meses o más, se computa 1 año.
             if (months >= 3) {
                 antiguedadAnios += 1;
             } else if (antiguedadAnios === 0 && months < 3) {
-                 antiguedadAnios = 1; // Mínimo 1 año de indemnización
+                 antiguedadAnios = 1; // Mínimo 1 año de indemnización si trabajó algo
             }
 
             // Determinar la Base de Cálculo (BCC): el menor entre MRMNyH y Tope Salarial
@@ -711,10 +746,30 @@
 
             // E. MULTAS
             let multasTotal = 0;
-            let multa25323Art2 = (indemAntiguedad + indemPreaviso + indemIntegracion) * 0.50; // 50% sobre Indemnización Base
-            let multa25323Art80 = mrmnyh * 3; // 3 sueldos por falta de entrega de certificado
+            let multa25323Art2Monto = 0;
+            let multa25323Art80Monto = 0;
             let multa132bisMonto = 0;
+            
+            // Multa Art. 2 Ley 25.323 (50%)
+            if (multa25323Art2) {
+                multa25323Art2Monto = (indemAntiguedad + indemPreaviso + indemIntegracion) * 0.50;
+                multasTotal += multa25323Art2Monto;
+                document.getElementById('res-multa-2-row').classList.remove('hidden');
+            } else {
+                 document.getElementById('res-multa-2-row').classList.add('hidden');
+            }
 
+            // Multa Art. 80 LCT (3 x MRMNyH)
+            if (multa25323Art80) {
+                multa25323Art80Monto = mrmnyh * 3;
+                multasTotal += multa25323Art80Monto;
+                 document.getElementById('res-multa-80-row').classList.remove('hidden');
+            } else {
+                 document.getElementById('res-multa-80-row').classList.add('hidden');
+            }
+
+
+            // Multa Art. 132 bis LCT (Duplicación)
             if (multa132bis) {
                 // Duplica la Indemnización Base (Antigüedad + Preaviso + Integración)
                 multa132bisMonto = indemAntiguedad + indemPreaviso + indemIntegracion;
@@ -724,8 +779,6 @@
                 document.getElementById('res-multa-132bis-row').classList.add('hidden');
             }
             
-            multasTotal += multa25323Art2 + multa25323Art80;
-
             // F. INTERESES MORATORIOS
             let totalIntereses = 0;
             if (interesAnual > 0) {
@@ -747,8 +800,8 @@
             document.getElementById('res-sac-proporcional').textContent = formatter.format(indemSacProporcional);
             document.getElementById('res-diferencias-deuda').textContent = formatter.format(deudaDiferencias);
             document.getElementById('res-subtotal-bruto').textContent = formatter.format(subTotalConDeuda);
-            document.getElementById('res-multa-2').textContent = formatter.format(multa25323Art2);
-            document.getElementById('res-multa-80').textContent = formatter.format(multa25323Art80);
+            document.getElementById('res-multa-2').textContent = formatter.format(multa25323Art2Monto);
+            document.getElementById('res-multa-80').textContent = formatter.format(multa25323Art80Monto);
             document.getElementById('res-multa-132bis-monto').textContent = formatter.format(multa132bisMonto);
             document.getElementById('res-intereses').textContent = formatter.format(totalIntereses);
             document.getElementById('res-total-final').textContent = formatter.format(totalFinal);
@@ -809,13 +862,19 @@
                 { name: 'SAC Proporcional sobre Haberes', value: document.getElementById('res-sac-proporcional').textContent },
                 { name: 'Deuda por Diferencias Salariales (Pestaña 1)', value: totalDiferencias },
                 { name: 'SUBTOTAL BRUTO SIN MULTAS', value: document.getElementById('res-subtotal-bruto').textContent, bold: true },
-                { name: 'Multa Art. 2 Ley 25.323 (50%)', value: document.getElementById('res-multa-2').textContent },
-                { name: 'Multa Art. 80 LCT (3 MRMNyH)', value: document.getElementById('res-multa-80').textContent },
             ];
 
+            // Add multas only if visible/checked in the results section
+            if (!document.getElementById('res-multa-2-row').classList.contains('hidden')) {
+                rubros.push({ name: 'Multa Art. 2 Ley 25.323 (50% sobre Indemnización Base)', value: document.getElementById('res-multa-2').textContent });
+            }
+            if (!document.getElementById('res-multa-80-row').classList.contains('hidden')) {
+                rubros.push({ name: 'Multa Art. 80 LCT (3 MRMNyH)', value: document.getElementById('res-multa-80').textContent });
+            }
             if (!document.getElementById('res-multa-132bis-row').classList.contains('hidden')) {
                  rubros.push({ name: 'Multa Art. 132 bis LCT (Duplicación)', value: document.getElementById('res-multa-132bis-monto').textContent });
             }
+
 
             rubros.push(
                 { name: `Intereses Moratorios Aplicados (${interesAnual}%)`, value: document.getElementById('res-intereses').textContent, color: '#33A03E' },
@@ -826,7 +885,9 @@
             // 1. HEADER AND LOGO
             const logoImage = document.getElementById('app-logo');
             if (logoImage) {
-                doc.addImage(logoImage.src, 'JPEG', margin, y, 30, 25);
+                // For better compatibility, use the exact Base64 string from HTML
+                const base64String = logoImage.src.split(',')[1];
+                doc.addImage(base64String, 'JPEG', margin, y, 30, 25);
             }
             
             doc.setFontSize(18);
@@ -890,7 +951,15 @@
                 }
                 
                 if (item.color) {
-                    doc.setTextColor(item.color);
+                    // Set color using RGB array for better compatibility
+                    const hexToRgb = (hex) => {
+                        let bigint = parseInt(hex.slice(1), 16);
+                        let r = (bigint >> 16) & 255;
+                        let g = (bigint >> 8) & 255;
+                        let b = bigint & 255;
+                        return [r, g, b];
+                    };
+                    doc.setTextColor(hexToRgb(item.color));
                 } else {
                     doc.setTextColor(0); // Black
                 }
@@ -930,6 +999,7 @@
 
 </body>
 </html>
+
 
 
 
