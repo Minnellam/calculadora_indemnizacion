@@ -923,7 +923,7 @@
 
             // Acceder al constructor desde el objeto global window.jspdf de forma robusta
             try {
-                // Modificación: Uso directo del constructor del objeto global jspdf.
+                // Uso directo del constructor del objeto global jspdf.
                 const jsPDF = window.jspdf.jsPDF; 
                 if (typeof jsPDF === 'undefined') {
                     throw new Error("Constructor jsPDF no disponible.");
@@ -945,19 +945,32 @@
                 doc.setFontSize(24);
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(31, 58, 101); // Navy Deep (RGB)
-                doc.text("ND", margin, y + 5);
+                
+                // --- AJUSTE DE ALINEACIÓN DEL LOGO ---
+                const logoX = margin + 5; // Centro del círculo en X
+                const logoY = y + 5;      // Centro del círculo en Y
+
+                // Dibujar Círculo (Gold Accent)
                 doc.setDrawColor(212, 173, 107); // Gold Accent (RGB)
                 doc.setLineWidth(1);
-                doc.circle(margin + 5, y + 5, 8); // Simple gold circle for effect
+                doc.circle(logoX, logoY, 8); // Círculo centrado en (logoX, logoY)
+
+                // Texto "ND"
+                doc.setTextColor(31, 58, 101); // Navy Deep (RGB)
+                // Usamos text con align: 'center' para centrar el texto dentro del círculo
+                doc.text("ND", logoX, logoY + 2, { align: 'center' }); 
+                
                 doc.setTextColor(0); // Black
 
+                // Títulos
+                const titleX = margin + 35; // Posición de inicio del título
                 doc.setFontSize(18);
                 doc.setFont('helvetica', 'bold');
-                doc.text("INFORME DE LIQUIDACIÓN LABORAL", margin + 35, y + 5);
+                doc.text("INFORME DE LIQUIDACIÓN LABORAL", titleX, y + 5);
                 
                 doc.setFontSize(10);
                 doc.setFont('helvetica', 'normal');
-                doc.text("NANCI DE MORAIZ - ASESORAMIENTO JURÍDICO INTEGRAL", margin + 35, y + 12);
+                doc.text("NANCI DE MORAIZ - ASESORAMIENTO JURÍDICO INTEGRAL", titleX, y + 12);
                 
                 y += 25; // Move down past header
 
