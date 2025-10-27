@@ -6,7 +6,7 @@
     <title>Calculadora de Indemnizaciones Laborales</title>
     <!-- Tailwind CSS CDN for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- JsPDF CDN for PDF generation -->
+    <!-- JsPDF CDN for PDF generation (CARGA GLOBAL) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script>
         // Configuración de Tailwind para usar la fuente Inter y nuestros colores
@@ -133,7 +133,7 @@
             import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
             import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
             import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-            import 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+            // REMOVED: import 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; <- Redundante y causa conflicto
 
             // Check if environment variables are defined, otherwise use fallbacks
             const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { /* Fallback or empty config */ };
@@ -921,7 +921,8 @@
                 return;
             }
 
-            const jsPDF = window.jspdf.jsPDF;
+            // Acceder al constructor desde el objeto global window.jspdf
+            const jsPDF = window.jspdf.jsPDF; 
             const doc = new jsPDF();
             const margin = 15;
             let y = margin;
