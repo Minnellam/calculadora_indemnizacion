@@ -921,147 +921,156 @@
                 return;
             }
 
-            // Acceder al constructor desde el objeto global window.jspdf
-            const jsPDF = window.jspdf.jsPDF; 
-            const doc = new jsPDF();
-            const margin = 15;
-            let y = margin;
-            const lineHeight = 7;
-            const maxWidth = 180;
-            const data = window.pdfData;
-            
-            // --- Función para obtener el texto del rubro (del resultado visible) ---
-            const getRubroText = (id) => document.getElementById(id).textContent;
+            // Acceder al constructor desde el objeto global window.jspdf de forma robusta
+            try {
+                const { jsPDF } = window.jspdf;
+                if (typeof jsPDF === 'undefined') {
+                    throw new Error("Constructor jsPDF no disponible.");
+                }
+                const doc = new jsPDF();
+                
+                const margin = 15;
+                let y = margin;
+                const lineHeight = 7;
+                const maxWidth = 180;
+                const data = window.pdfData;
+                
+                // --- Función para obtener el texto del rubro (del resultado visible) ---
+                const getRubroText = (id) => document.getElementById(id).textContent;
 
 
-            // 1. HEADER AND LOGO (ND Placeholder)
-            y += 5;
-            doc.setFontSize(24);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(31, 58, 101); // Navy Deep
-            doc.text("ND", margin, y + 5);
-            doc.setDrawColor(212, 173, 107); // Gold Accent
-            doc.setLineWidth(1);
-            doc.circle(margin + 5, y + 5, 8); // Simple gold circle for effect
-            doc.setTextColor(0); // Black
+                // 1. HEADER AND LOGO (ND Placeholder)
+                y += 5;
+                doc.setFontSize(24);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(31, 58, 101); // Navy Deep (RGB)
+                doc.text("ND", margin, y + 5);
+                doc.setDrawColor(212, 173, 107); // Gold Accent (RGB)
+                doc.setLineWidth(1);
+                doc.circle(margin + 5, y + 5, 8); // Simple gold circle for effect
+                doc.setTextColor(0); // Black
 
-            doc.setFontSize(18);
-            doc.setFont('helvetica', 'bold');
-            doc.text("INFORME DE LIQUIDACIÓN LABORAL", margin + 35, y + 5);
-            
-            doc.setFontSize(10);
-            doc.setFont('helvetica', 'normal');
-            doc.text("NANCI DE MORAIZ - ASESORAMIENTO JURÍDICO INTEGRAL", margin + 35, y + 12);
-            
-            y += 25; // Move down past header
+                doc.setFontSize(18);
+                doc.setFont('helvetica', 'bold');
+                doc.text("INFORME DE LIQUIDACIÓN LABORAL", margin + 35, y + 5);
+                
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'normal');
+                doc.text("NANCI DE MORAIZ - ASESORAMIENTO JURÍDICO INTEGRAL", margin + 35, y + 12);
+                
+                y += 25; // Move down past header
 
-            // 2. DATOS DEL TRABAJADOR
-            doc.setFontSize(14);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(31, 58, 101); // Navy
-            doc.text("DATOS DEL TRABAJADOR Y EMPLEO", margin, y);
-            y += lineHeight;
-
-            doc.setFontSize(10);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(0); // Black
-
-            const workerData = [
-                `Nombre: ${data.nombreTrabajador}`,
-                `DNI: ${data.dniTrabajador} / CUIT: ${data.cuitTrabajador}`,
-                `Profesión: ${data.profesionTrabajador} - CCT: ${data.cctAplicable}`,
-                `Fecha Ingreso: ${data.fechaIngreso} - Fecha Egreso: ${data.fechaEgreso}`,
-            ];
-
-            doc.text(workerData, margin, y, { lineHeightFactor: 1.5, maxWidth: maxWidth });
-            y += (workerData.length * lineHeight * 0.75) + 5;
-
-
-            // 3. DETALLE DE RUBROS
-            doc.setFontSize(14);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(31, 58, 101); // Navy
-            doc.text("DETALLE DE RUBROS Y MONTOS", margin, y);
-            y += lineHeight;
-            
-            doc.setFontSize(10);
-            doc.setFont('helvetica', 'normal');
-
-            // Draw table lines and entries
-            doc.setDrawColor('#D4AD6B'); // Gold
-            doc.setLineWidth(0.5);
-            doc.line(margin, y, margin + maxWidth, y); // Top line
-
-            const rubros = [
-                { name: 'MRMNyH (Sueldo Base)', value: formatter.format(data.mrmnyh) },
-                { name: 'Tope Salarial CCT Aplicado', value: formatter.format(data.topeSalarialDisplay) },
-                { name: 'Antigüedad Reconocida', value: data.antiguedadDisplay },
-                { name: 'Base de Cálculo (Art. 245)', value: getRubroText('res-base-calculo') },
-                { name: 'Indemnización por Antigüedad', value: getRubroText('res-antiguedad-monto') },
-                { name: 'Indemnización por Preaviso (+ SAC y Vacaciones)', value: getRubroText('res-preaviso-monto') },
-                { name: 'Integración Mes Despido (+ SAC)', value: getRubroText('res-integracion-monto') },
-                { name: 'Vacaciones No Gozadas Proporcionales', value: getRubroText('res-vacaciones-monto') },
-                { name: 'SAC Proporcional sobre Haberes', value: getRubroText('res-sac-proporcional') },
-                { name: 'Deuda por Diferencias Salariales (Pestaña 1)', value: getRubroText('res-diferencias-deuda'), color: '#1F3A65' },
-                { name: 'SUBTOTAL BRUTO SIN MULTAS', value: getRubroText('res-subtotal-bruto'), bold: true },
-            ];
-            
-            // Add multas only if checked (using the visibility of the results rows)
-            if (!document.getElementById('res-multa-2-row').classList.contains('hidden')) {
-                rubros.push({ name: 'Multa Art. 2 Ley 25.323 (50% sobre Indemnización Base)', value: getRubroText('res-multa-2') });
-            }
-            if (!document.getElementById('res-multa-80-row').classList.contains('hidden')) {
-                rubros.push({ name: 'Multa Art. 80 LCT (3 MRMNyH)', value: getRubroText('res-multa-80') });
-            }
-            if (!document.getElementById('res-multa-132bis-row').classList.contains('hidden')) {
-                rubros.push({ name: 'Multa Art. 132 bis LCT (Duplicación)', value: getRubroText('res-multa-132bis-monto') });
-            }
-
-            rubros.push(
-                { name: `Intereses Moratorios Aplicados (${data.interesAnual}%)`, value: getRubroText('res-intereses'), color: '#33A03E' },
-                { name: 'TOTAL ESTIMADO FINAL RECLAMABLE', value: getRubroText('res-total-final'), bold: true, size: 14, color: '#1F3A65' }
-            );
-
-            rubros.forEach(item => {
+                // 2. DATOS DEL TRABAJADOR
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(31, 58, 101); // Navy
+                doc.text("DATOS DEL TRABAJADOR Y EMPLEO", margin, y);
                 y += lineHeight;
 
-                doc.setFont('helvetica', item.bold ? 'bold' : 'normal');
-                // Use RGB values for color settings in jsPDF
-                const hexToRgb = (hex) => {
-                    let bigint = parseInt(hex.slice(1), 16);
-                    let r = (bigint >> 16) & 255;
-                    let g = (bigint >> 8) & 255;
-                    let b = bigint & 255;
-                    return [r, g, b];
-                };
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(0); // Black
+
+                const workerData = [
+                    `Nombre: ${data.nombreTrabajador}`,
+                    `DNI: ${data.dniTrabajador} / CUIT: ${data.cuitTrabajador}`,
+                    `Profesión: ${data.profesionTrabajador} - CCT: ${data.cctAplicable}`,
+                    `Fecha Ingreso: ${data.fechaIngreso} - Fecha Egreso: ${data.fechaEgreso}`,
+                ];
+
+                doc.text(workerData, margin, y, { lineHeightFactor: 1.5, maxWidth: maxWidth });
+                y += (workerData.length * lineHeight * 0.75) + 5;
+
+
+                // 3. DETALLE DE RUBROS
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(31, 58, 101); // Navy
+                doc.text("DETALLE DE RUBROS Y MONTOS", margin, y);
+                y += lineHeight;
                 
-                doc.setTextColor(item.color ? hexToRgb(item.color) : 0);
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'normal');
 
-                doc.setFontSize(item.size || 10);
+                // Draw table lines and entries
+                doc.setDrawColor(212, 173, 107); // Gold
+                doc.setLineWidth(0.5);
+                doc.line(margin, y, margin + maxWidth, y); // Top line
 
-                // Left Column (Rubro Name)
-                doc.text(item.name, margin + 2, y);
-                // Right Column (Amount)
-                doc.text(item.value, margin + maxWidth - 2, y, { align: 'right' });
-
-                if (item.name === 'TOTAL ESTIMADO FINAL RECLAMABLE') {
-                    doc.setDrawColor(31, 58, 101); // Navy
-                    doc.setLineWidth(0.8);
-                    doc.line(margin, y + 1, margin + maxWidth, y + 1); // Final line
+                const rubros = [
+                    { name: 'MRMNyH (Sueldo Base)', value: formatter.format(data.mrmnyh) },
+                    { name: 'Tope Salarial CCT Aplicado', value: formatter.format(data.topeSalarialDisplay) },
+                    { name: 'Antigüedad Reconocida', value: data.antiguedadDisplay },
+                    { name: 'Base de Cálculo (Art. 245)', value: getRubroText('res-base-calculo') },
+                    { name: 'Indemnización por Antigüedad', value: getRubroText('res-antiguedad-monto') },
+                    { name: 'Indemnización por Preaviso (+ SAC y Vacaciones)', value: getRubroText('res-preaviso-monto') },
+                    { name: 'Integración Mes Despido (+ SAC)', value: getRubroText('res-integracion-monto') },
+                    { name: 'Vacaciones No Gozadas Proporcionales', value: getRubroText('res-vacaciones-monto') },
+                    { name: 'SAC Proporcional sobre Haberes', value: getRubroText('res-sac-proporcional') },
+                    { name: 'Deuda por Diferencias Salariales (Pestaña 1)', value: getRubroText('res-diferencias-deuda'), color: '#1F3A65' },
+                    { name: 'SUBTOTAL BRUTO SIN MULTAS', value: getRubroText('res-subtotal-bruto'), bold: true },
+                ];
+                
+                // Add multas only if checked (using the visibility of the results rows)
+                if (!document.getElementById('res-multa-2-row').classList.contains('hidden')) {
+                    rubros.push({ name: 'Multa Art. 2 Ley 25.323 (50% sobre Indemnización Base)', value: getRubroText('res-multa-2') });
                 }
-            });
+                if (!document.getElementById('res-multa-80-row').classList.contains('hidden')) {
+                    rubros.push({ name: 'Multa Art. 80 LCT (3 MRMNyH)', value: getRubroText('res-multa-80') });
+                }
+                if (!document.getElementById('res-multa-132bis-row').classList.contains('hidden')) {
+                    rubros.push({ name: 'Multa Art. 132 bis LCT (Duplicación)', value: getRubroText('res-multa-132bis-monto') });
+                }
 
-            y += 5;
+                rubros.push(
+                    { name: `Intereses Moratorios Aplicados (${data.interesAnual}%)`, value: getRubroText('res-intereses'), color: '#33A03E' },
+                    { name: 'TOTAL ESTIMADO FINAL RECLAMABLE', value: getRubroText('res-total-final'), bold: true, size: 14, color: '#1F3A65' }
+                );
 
-            // 4. FOOTER / DISCLAIMER
-            doc.setFontSize(8);
-            doc.setFont('helvetica', 'italic');
-            doc.setTextColor(100); // Gray
-            doc.text(`Generado el: ${new Date().toLocaleDateString('es-AR')} a las ${new Date().toLocaleTimeString('es-AR')}.`, margin, doc.internal.pageSize.height - 10);
-            doc.text("Este informe es una ESTIMACIÓN preliminar. Consulte a un profesional para la liquidación final y aplicación de la legislación vigente.", margin, doc.internal.pageSize.height - 5);
+                rubros.forEach(item => {
+                    y += lineHeight;
+
+                    doc.setFont('helvetica', item.bold ? 'bold' : 'normal');
+                    // Use RGB values for color settings in jsPDF
+                    const hexToRgb = (hex) => {
+                        let bigint = parseInt(hex.slice(1), 16);
+                        let r = (bigint >> 16) & 255;
+                        let g = (bigint >> 8) & 255;
+                        let b = bigint & 255;
+                        return [r, g, b];
+                    };
+                    
+                    doc.setTextColor(item.color ? hexToRgb(item.color) : 0);
+
+                    doc.setFontSize(item.size || 10);
+
+                    // Left Column (Rubro Name)
+                    doc.text(item.name, margin + 2, y);
+                    // Right Column (Amount)
+                    doc.text(item.value, margin + maxWidth - 2, y, { align: 'right' });
+
+                    if (item.name === 'TOTAL ESTIMADO FINAL RECLAMABLE') {
+                        doc.setDrawColor(31, 58, 101); // Navy
+                        doc.setLineWidth(0.8);
+                        doc.line(margin, y + 1, margin + maxWidth, y + 1); // Final line
+                    }
+                });
+
+                y += 5;
+
+                // 4. FOOTER / DISCLAIMER
+                doc.setFontSize(8);
+                doc.setFont('helvetica', 'italic');
+                doc.setTextColor(100); // Gray
+                doc.text(`Generado el: ${new Date().toLocaleDateString('es-AR')} a las ${new Date().toLocaleTimeString('es-AR')}.`, margin, doc.internal.pageSize.height - 10);
+                doc.text("Este informe es una ESTIMACIÓN preliminar. Consulte a un profesional para la liquidación final y aplicación de la legislación vigente.", margin, doc.internal.pageSize.height - 5);
 
 
-            doc.save(`Liquidacion_NanciDeMoraiz_${data.nombreTrabajador.replace(/\s/g, '_')}.pdf`);
+                doc.save(`Liquidacion_NanciDeMoraiz_${data.nombreTrabajador.replace(/\s/g, '_')}.pdf`);
+            } catch (error) {
+                console.error("Error al generar el PDF:", error);
+                showModal('Error de Generación de PDF', 'Hubo un error al intentar crear el documento. Asegúrese de haber calculado la liquidación final primero. Detalle: ' + error.message);
+            }
         };
         
     </script>
