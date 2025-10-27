@@ -923,7 +923,8 @@
 
             // Acceder al constructor desde el objeto global window.jspdf de forma robusta
             try {
-                const { jsPDF } = window.jspdf;
+                // Modificación: Uso directo del constructor del objeto global jspdf.
+                const jsPDF = window.jspdf.jsPDF; 
                 if (typeof jsPDF === 'undefined') {
                     throw new Error("Constructor jsPDF no disponible.");
                 }
@@ -935,8 +936,8 @@
                 const maxWidth = 180;
                 const data = window.pdfData;
                 
-                // --- Función para obtener el texto del rubro (del resultado visible) ---
-                const getRubroText = (id) => document.getElementById(id).textContent;
+                // --- Función para obtener el texto del rubro y asegurarnos de que sea string ---
+                const getRubroText = (id) => String(document.getElementById(id).textContent);
 
 
                 // 1. HEADER AND LOGO (ND Placeholder)
@@ -978,7 +979,8 @@
                     `Fecha Ingreso: ${data.fechaIngreso} - Fecha Egreso: ${data.fechaEgreso}`,
                 ];
 
-                doc.text(workerData, margin, y, { lineHeightFactor: 1.5, maxWidth: maxWidth });
+                // Modificación: Asegurar que cada elemento de la lista sea un string
+                doc.text(workerData.map(item => String(item)), margin, y, { lineHeightFactor: 1.5, maxWidth: maxWidth });
                 y += (workerData.length * lineHeight * 0.75) + 5;
 
 
@@ -1000,7 +1002,7 @@
                 const rubros = [
                     { name: 'MRMNyH (Sueldo Base)', value: formatter.format(data.mrmnyh) },
                     { name: 'Tope Salarial CCT Aplicado', value: formatter.format(data.topeSalarialDisplay) },
-                    { name: 'Antigüedad Reconocida', value: data.antiguedadDisplay },
+                    { name: 'Antigüedad Reconocida', value: String(data.antiguedadDisplay) }, // Asegurar string
                     { name: 'Base de Cálculo (Art. 245)', value: getRubroText('res-base-calculo') },
                     { name: 'Indemnización por Antigüedad', value: getRubroText('res-antiguedad-monto') },
                     { name: 'Indemnización por Preaviso (+ SAC y Vacaciones)', value: getRubroText('res-preaviso-monto') },
@@ -1040,14 +1042,16 @@
                         return [r, g, b];
                     };
                     
-                    doc.setTextColor(item.color ? hexToRgb(item.color) : 0);
+                    // Modificación: Setear color en jsPDF con RGB
+                    const rgbColor = item.color ? hexToRgb(item.color) : [0, 0, 0];
+                    doc.setTextColor(rgbColor[0], rgbColor[1], rgbColor[2]);
 
                     doc.setFontSize(item.size || 10);
 
                     // Left Column (Rubro Name)
-                    doc.text(item.name, margin + 2, y);
+                    doc.text(String(item.name), margin + 2, y);
                     // Right Column (Amount)
-                    doc.text(item.value, margin + maxWidth - 2, y, { align: 'right' });
+                    doc.text(String(item.value), margin + maxWidth - 2, y, { align: 'right' });
 
                     if (item.name === 'TOTAL ESTIMADO FINAL RECLAMABLE') {
                         doc.setDrawColor(31, 58, 101); // Navy
@@ -1061,7 +1065,7 @@
                 // 4. FOOTER / DISCLAIMER
                 doc.setFontSize(8);
                 doc.setFont('helvetica', 'italic');
-                doc.setTextColor(100); // Gray
+                doc.setTextColor(100); // Gray (Simplified: jsPDF takes a number for gray scale)
                 doc.text(`Generado el: ${new Date().toLocaleDateString('es-AR')} a las ${new Date().toLocaleTimeString('es-AR')}.`, margin, doc.internal.pageSize.height - 10);
                 doc.text("Este informe es una ESTIMACIÓN preliminar. Consulte a un profesional para la liquidación final y aplicación de la legislación vigente.", margin, doc.internal.pageSize.height - 5);
 
@@ -1069,7 +1073,12 @@
                 doc.save(`Liquidacion_NanciDeMoraiz_${data.nombreTrabajador.replace(/\s/g, '_')}.pdf`);
             } catch (error) {
                 console.error("Error al generar el PDF:", error);
-                showModal('Error de Generación de PDF', 'Hubo un error al intentar crear el documento. Asegúrese de haber calculado la liquidación final primero. Detalle: ' + error.message);
+                // Si la excepción es el error de argumento, mostramos un mensaje específico
+                const errorMessage = error.message.includes("Invalid argument passed") 
+                    ? "Error de formato de datos en el informe. Verifique que todos los campos de entrada estén calculados."
+                    : error.message;
+
+                showModal('Error de Generación de PDF', 'Hubo un error al intentar crear el documento. Asegúrese de haber calculado la liquidación final primero. Detalle: ' + errorMessage);
             }
         };
         
