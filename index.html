@@ -3,748 +3,799 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calculadora de Indemnizaciones Laborales (Argentina)</title>
+    <title>Calculadora de Indemnizaciones Laborales</title>
+    <!-- Tailwind CSS CDN for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- LIBRERÍA PDF (CARGA GLOBAL) -->
-    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <style>
+        /* Custom styles for better aesthetics and readability */
+        :root {
+            --primary-color: #2563eb; /* blue-600 */
+            --secondary-color: #f59e0b; /* amber-500 */
+            --background-color: #f9fafb; /* gray-50 */
+            --card-background: #ffffff;
+            --text-color: #1f2937; /* gray-800 */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+        }
+        .tab-button.active {
+            background-color: var(--primary-color);
+            color: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+        .result-box {
+            background-color: #e5e7eb; /* gray-200 */
+        }
+        .main-title {
+            color: var(--primary-color);
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
 
-    <!-- Librerías de Firebase (Carga Modular V9 para GitHub Pages) -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection, query, addDoc, getDocs, where, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        setLogLevel('debug');
+    <div id="app" class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-extrabold main-title mb-6 text-center">Calculadora de Liquidación y Diferencias Salariales (LCT)</h1>
 
-        // Configuraciones de entorno
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfigRaw = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-        const firebaseConfig = JSON.parse(firebaseConfigRaw);
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null; 
-        
-        // Variables de la aplicación
-        let app = null;
-        let db = null;
-        let auth = null;
-        let currentUser = { uid: 'local_user' };
-        let currentLiquidationResult = null;
-        let currentDifferencesResult = null; // Nuevo resultado para diferencias salariales
-        
-        // Determina si estamos en modo local sin configuración de Firebase
-        const isLocalMode = !firebaseConfig.apiKey; 
+        <!-- Navigation Tabs -->
+        <div class="flex flex-wrap justify-center mb-8 p-1 bg-white rounded-lg shadow-md">
+            <button id="tab-btn-diferencias-salariales" onclick="changeTab('diferencias-salariales')" class="tab-button active flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200">
+                1. Diferencias Salariales (Base de Reclamo)
+            </button>
+            <button id="tab-btn-indemnizacion" onclick="changeTab('indemnizacion')" class="tab-button flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200">
+                2. Liquidación Final (Indemnización y Multas)
+            </button>
+            <button id="tab-btn-guia-uso" onclick="changeTab('guia-uso')" class="tab-button flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200">
+                3. Guía de Uso y Fundamentos
+            </button>
+        </div>
 
-        // --- UTILS UI ---
-        const showSpinner = (show) => {
-            document.getElementById('loading-spinner').classList.toggle('hidden', !show);
-        };
+        <!-- FIREBASE & CORE SETUP (Keep at start of script block) -->
+        <script type="module">
+            import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+            import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+            import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const showModal = (title, content, type = 'error') => {
-            document.getElementById('modal-title').innerText = title;
-            document.getElementById('modal-content').innerHTML = content;
-            const titleElement = document.getElementById('modal-title');
-            titleElement.classList.toggle('text-red-600', type === 'error');
-            titleElement.classList.toggle('text-blue-600', type === 'info');
-            document.getElementById('modal').classList.remove('hidden');
-        };
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { /* Fallback or empty config */ };
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-        const hideModal = () => {
-            document.getElementById('modal').classList.add('hidden');
-        };
-        
-        const formatCurrency = (amount) => {
-            return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(amount);
-        };
-        
-        // Función de navegación de pestañas
-        const changeTab = (tabName) => {
-            document.getElementById('indemnizacion-tab').classList.add('hidden');
-            document.getElementById('diferencias-salariales-tab').classList.add('hidden');
-            
-            document.getElementById('btn-indemnizacion').classList.remove('bg-red-600', 'text-white');
-            document.getElementById('btn-indemnizacion').classList.add('text-red-600', 'hover:bg-gray-100');
-            
-            document.getElementById('btn-diferencias').classList.remove('bg-red-600', 'text-white');
-            document.getElementById('btn-diferencias').classList.add('text-red-600', 'hover:bg-gray-100');
+            const app = initializeApp(firebaseConfig);
+            window.db = getFirestore(app);
+            window.auth = getAuth(app);
+            window.userId = null;
 
+            // Global State Variables
+            window.currentDifferencesResult = 0;
+            window.isAuthReady = false;
 
-            if (tabName === 'indemnizacion') {
-                document.getElementById('indemnizacion-tab').classList.remove('hidden');
-                document.getElementById('btn-indemnizacion').classList.add('bg-red-600', 'text-white');
-                document.getElementById('btn-indemnizacion').classList.remove('text-red-600', 'hover:bg-gray-100');
-            } else if (tabName === 'diferencias') {
-                document.getElementById('diferencias-salariales-tab').classList.remove('hidden');
-                document.getElementById('btn-diferencias').classList.add('bg-red-600', 'text-white');
-                document.getElementById('btn-diferencias').classList.remove('text-red-600', 'hover:bg-gray-100');
-            }
-        };
+            // Global helper to show the custom modal
+            window.showModal = (title, message) => {
+                document.getElementById('modal-title').textContent = title;
+                document.getElementById('modal-message').textContent = message;
+                document.getElementById('custom-modal').classList.remove('hidden');
+            };
 
+            window.hideModal = () => {
+                document.getElementById('custom-modal').classList.add('hidden');
+            };
 
-        // Esta función solo se usará si 'db' está inicializado
-        const getLiquidationCollectionRef = () => collection(db, `artifacts/${appId}/users/${currentUser.uid}/liquidations`);
-
-        // --- AUTH & UI LOGIC ---
-        const handleAuth = async () => {
-            showSpinner(true);
-            
-            if (isLocalMode) {
-                // Modo local
-                document.getElementById('auth-screen').classList.add('hidden');
-                document.getElementById('main-app').classList.remove('hidden');
-                document.getElementById('user-info').innerText = `ID de Sesión: MODO LOCAL`;
-                loadHistory(); 
-                changeTab('indemnizacion'); // Inicializar en la primera pestaña
-                showSpinner(false);
-                return;
-            }
-            
-            // Modo Canvas / Producción: Inicializar Firebase
-            try {
-                app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.error("Firebase Init Error:", error);
-                showModal("Error de Inicialización", "No se pudo conectar a la base de datos o autenticar. Verifique la consola para detalles.");
-            }
-            
-            onAuthStateChanged(auth, async (user) => {
+            // Authentication Initialization
+            onAuthStateChanged(window.auth, (user) => {
                 if (user) {
-                    currentUser = user;
-                    document.getElementById('auth-screen').classList.add('hidden');
-                    document.getElementById('main-app').classList.remove('hidden');
-                    const displayId = user.isAnonymous ? 'Anónimo' : `${currentUser.uid.substring(0, 8)}...`;
-                    document.getElementById('user-info').innerText = `ID de Sesión: ${displayId}`;
-                    loadHistory();
-                    changeTab('indemnizacion'); // Inicializar en la primera pestaña
-                } 
-                showSpinner(false);
+                    window.userId = user.uid;
+                    window.isAuthReady = true;
+                    // Start listening for data once auth is ready
+                    listenForData();
+                } else {
+                    // Sign in anonymously if no user is found
+                    signInAnonymously(window.auth).catch(error => {
+                        console.error("Firebase Sign In Error:", error);
+                        window.showModal('Error de Conexión', 'No se pudo iniciar sesión en la base de datos para guardar el estado. ' + error.message);
+                    });
+                }
             });
-        };
 
-        const handleLogout = async () => {
-            if (isLocalMode) return; 
-            
-            showSpinner(true);
-            try {
-                await signOut(auth);
-                await signInAnonymously(auth); 
-            } catch (error) {
-                console.error("Logout Error:", error);
-            }
-        };
-        // --- END AUTH LOGIC ---
+            // Firestore Data Listener (Saves and loads basic state)
+            function listenForData() {
+                if (!window.db || !window.userId) return;
 
-        // --- CÁLCULO DE ANTIGÜEDAD Y DÍAS TRABAJADOS (Liquidación) ---
-        const getDaysInYear = (year) => (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 366 : 365;
-        
-        const getBaseVacationDays = (completedYears) => {
-            if (completedYears >= 20) return 35;
-            if (completedYears >= 10) return 28;
-            if (completedYears >= 5) return 21;
-            if (completedYears >= 0.5) return 14; 
-            return 0; 
-        };
+                const docRef = doc(window.db, "artifacts", appId, "users", window.userId, "calculadora", "state");
 
-        const calculateAntiquity = (startDate, endDate) => {
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-
-            let years = end.getFullYear() - start.getFullYear();
-            let months = end.getMonth() - start.getMonth();
-            let days = end.getDate() - start.getDate();
-
-            if (days < 0) {
-                months--;
-                days += new Date(end.getFullYear(), end.getMonth(), 0).getDate();
+                onSnapshot(docRef, (docSnap) => {
+                    if (docSnap.exists() && window.isAuthReady) {
+                        const data = docSnap.data();
+                        document.getElementById('mrmnyh-sueldo').value = data.mrmnyh || '';
+                        document.getElementById('tope-salarial').value = data.topeSalarial || '';
+                        // You can load other fields here if needed
+                    }
+                }, (error) => {
+                    console.error("Firestore Error:", error);
+                });
             }
 
-            if (months < 0) {
-                years--;
-                months += 12;
-            }
+            // Function to save the MRMNyH and Tope Salarial
+            window.saveBasicState = async () => {
+                if (!window.db || !window.userId || !window.isAuthReady) return;
 
-            const startOfYear = new Date(end.getFullYear(), 0, 1);
-            const daysInYear = Math.ceil((end - startOfYear) / (1000 * 60 * 60 * 24)) + 1; 
-            
-            const semesterStartMonth = (end.getMonth() + 1 <= 6) ? 0 : 6;
-            const startOfSemester = new Date(end.getFullYear(), semesterStartMonth, 1);
-            const daysInSemester = Math.ceil((end - startOfSemester) / (1000 * 60 * 60 * 24)) + 1; 
-
-            // Regla del art. 245 LCT (Antigüedad Computable para Indemnización)
-            let yearsForIndemnity = years;
-            if (months > 3 || (months === 3 && days >= 1)) {
-                yearsForIndemnity++;
-            }
-            if (yearsForIndemnity === 0 && (months > 0 || days > 0)) {
-                yearsForIndemnity = 1; 
-            }
-
-            return {
-                years, 
-                months,
-                days,
-                yearsForIndemnity, 
-                daysInYear, 
-                daysInSemester 
+                try {
+                    const dataToSave = {
+                        mrmnyh: document.getElementById('mrmnyh-sueldo').value,
+                        topeSalarial: document.getElementById('tope-salarial').value
+                        // Add other fields you want to save
+                    };
+                    const docRef = doc(window.db, "artifacts", appId, "users", window.userId, "calculadora", "state");
+                    await setDoc(docRef, dataToSave, { merge: true });
+                } catch (error) {
+                    console.error("Error saving state:", error);
+                }
             };
-        };
-
-        // --- CÁLCULO DE RUBROS Y MULTAS (Liquidación) ---
-        const calculateSeverance = () => {
-            // Datos del Empleado
-            const sueldo = parseFloat(document.getElementById('sueldo').value) || 0;
-            const topeSalarialInput = document.getElementById('tope-salarial').value;
-            const topeSalarial = topeSalarialInput ? parseFloat(topeSalarialInput) : sueldo; 
-            
-            const fechaIngreso = document.getElementById('fecha-ingreso').value;
-            const fechaEgreso = document.getElementById('fecha-egreso').value || new Date().toISOString().substring(0, 10);
-            const jornada = parseFloat(document.getElementById('jornada').value) || 8;
-            const fine25323_2 = document.getElementById('fine-25323-2').checked;
-            const fine25323_1 = document.getElementById('fine-25323-1').checked;
-            const fineArt80 = document.getElementById('fine-art-80').checked; 
-
-            const resultDiv = document.getElementById('result-summary');
-
-            if (!fechaIngreso || sueldo <= 0 || jornada <= 0) {
-                resultDiv.innerHTML = '<p class="text-red-500 font-bold">Por favor, complete la Fecha de Ingreso, Sueldo y Jornada.</p>';
-                return;
-            }
-
-            const { years, yearsForIndemnity, daysInYear, daysInSemester } = calculateAntiquity(fechaIngreso, fechaEgreso);
-            const proportionalityFactor = jornada / 8;
-            const workingDaysInYear = getDaysInYear(new Date(fechaEgreso).getFullYear());
-
-            // 1. BASE INDEMNIZATORIA 
-            const baseIndemnizatoria245 = Math.min(sueldo, topeSalarial);
-
-            // 2. Indemnización por Antigüedad (Art. 245)
-            const indemAntiguedadBruto = baseIndemnizatoria245 * yearsForIndemnity;
-
-            // 3. Indemnización por Preaviso (Art. 231-232)
-            let mesesPreaviso = (years < 5) ? 1 : 2;
-            const indemPreavisoBruto = sueldo * mesesPreaviso; 
-
-            // 4. Integración Mes de Despido (Simplificado)
-            const indemIntegracion = sueldo / 30; 
-
-            // 5. Sueldo Anual Complementario (SAC) Proporcional
-            const sacProporcionalBruto = (sueldo / 2) * (daysInSemester / 182.5);
-
-            // 6. Vacaciones No Gozadas Proporcionales (LCT Art. 156)
-            const baseVacationDays = getBaseVacationDays(years); 
-            const proportionalDays = (baseVacationDays / workingDaysInYear) * daysInYear; 
-            const vacacionesNoGozadasBruto = (sueldo / 25) * proportionalDays; 
-
-            // Subtotal de Rubros Remunerativos e Indemnizatorios Base
-            const subTotalBase = indemAntiguedadBruto + indemPreavisoBruto + indemIntegracion + sacProporcionalBruto + vacacionesNoGozadasBruto;
-            
-            // MULTAS LCT (Ley 25.323 y Art. 80)
-            let totalMultas = 0;
-            let multa25323_2 = 0;
-            let indemArt80 = 0; 
-
-            if (fine25323_2) {
-                multa25323_2 = (indemAntiguedadBruto + indemPreavisoBruto) * 0.5; 
-                totalMultas += multa25323_2;
-            }
-
-            if (fineArt80) {
-                indemArt80 = sueldo * 3;
-                totalMultas += indemArt80;
-            }
-
-            const multa25323_1 = (fine25323_1) ? subTotalBase * 0.10 : 0; 
-            totalMultas += multa25323_1;
-
-            // TOTAL FINAL
-            const totalLiquidacionSinProporcional = subTotalBase + totalMultas;
-            const totalLiquidacion = totalLiquidacionSinProporcional * proportionalityFactor;
+        </script>
 
 
-            currentLiquidationResult = {
-                sueldo,
-                topeSalarial,
-                fechaIngreso,
-                fechaEgreso,
-                years,
-                yearsForIndemnity,
-                baseIndemnizatoria245,
-                indemAntiguedad: indemAntiguedadBruto,
-                indemPreaviso: indemPreavisoBruto,
-                indemIntegracion: indemIntegracion,
-                sacProporcional: sacProporcionalBruto,
-                vacacionesNoGozadas: vacacionesNoGozadasBruto,
-                multa25323_2: multa25323_2,
-                multa25323_1: multa25323_1,
-                indemArt80: indemArt80,
-                totalMultas: totalMultas,
-                totalLiquidacion: totalLiquidacion,
-                proportionalityFactor,
-                baseVacationDays: baseVacationDays,
-                proportionalDays: proportionalDays.toFixed(2)
-            };
+        <!-- TAB: 1. Diferencias Salariales (Base de Reclamo) -->
+        <div id="diferencias-salariales-tab" class="tab-content bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+            <h2 class="text-2xl font-semibold mb-6 border-b pb-2 text-gray-700">1. Diferencias Salariales (Horas, Feriados)</h2>
+            <p class="mb-4 text-sm text-gray-600">Calcula la deuda del empleador por horas nocturnas y suplementarias para integrarla a la liquidación final.</p>
 
-            // Mostrar Resultados
-            resultDiv.innerHTML = `
-                <div class="space-y-3">
-                    <h3 class="text-xl font-bold text-blue-700 border-b pb-2">Resumen de Liquidación Detallado</h3>
-                    <div class="flex justify-between pb-1 text-sm text-gray-700">
-                        <span class="font-medium">Antigüedad Computable (Art. 245):</span>
-                        <span>${yearsForIndemnity} Años</span>
-                    </div>
-                    <!-- ... (resto del resumen de liquidación) ... -->
-                    <hr class="my-4 border-gray-500">
-                    <div class="flex justify-between items-center bg-red-100 p-3 rounded-lg">
-                        <span class="text-2xl font-extrabold text-red-800">TOTAL ESTIMADO:</span>
-                        <span class="text-3xl font-extrabold text-red-800">${formatCurrency(totalLiquidacion)}</span>
-                    </div>
-                    <p class="text-xs text-red-500 mt-2">Este total ya aplica la proporción de la jornada laboral.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                <!-- Sueldo Bruto Mensual (Base de Cálculo) -->
+                <div class="input-group">
+                    <label for="sueldo-bruto-mes" class="block text-sm font-medium text-gray-700">Sueldo Bruto Mensual a Recalcular (MRMNyH)</label>
+                    <input type="number" id="sueldo-bruto-mes" placeholder="Ej: 1800000" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required>
+                    <p class="text-xs text-gray-500 mt-1">Sueldo percibido por el trabajador en el mes a reclamar (el más alto del último año para horas extras).</p>
                 </div>
-            `;
 
-            document.getElementById('pdf-button').classList.remove('opacity-50', 'pointer-events-none');
+                <!-- **NUEVO CAMPO: Base Horaria** -->
+                <div class="input-group">
+                    <label for="base-horaria" class="block text-sm font-medium text-gray-700">Base Horaria Mensual del CCT</label>
+                    <input type="number" id="base-horaria" value="200" min="168" max="200" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required>
+                    <p class="text-xs text-gray-500 mt-1">Horas mensuales que establece el Convenio (ej: 200, 192, 180). Se usará para calcular el valor de la hora normal (Sueldo / Nro de Horas).</p>
+                </div>
+                
+                <!-- Meses a Reclamar -->
+                <div class="input-group">
+                    <label for="meses-reclamar" class="block text-sm font-medium text-gray-700">Meses a Reclamar (Prescripción LCT)</label>
+                    <input type="number" id="meses-reclamar" value="24" min="1" max="24" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required>
+                    <p class="text-xs text-gray-500 mt-1">Máximo 24 meses (2 años) hacia atrás para deudas salariales.</p>
+                </div>
+
+                <!-- Horario de Trabajo Habitual -->
+                <div class="input-group">
+                    <label class="block text-sm font-medium text-gray-700">Horario de Trabajo Habitual (Entrada - Salida)</label>
+                    <div class="flex space-x-2 mt-1">
+                        <input type="time" id="hora-entrada" value="09:00" class="block w-1/2 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required>
+                        <input type="time" id="hora-salida" value="17:00" class="block w-1/2 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Se usará para calcular automáticamente las horas nocturnas (21:00 a 06:00).</p>
+                </div>
+
+                <!-- Horas Extras 50% -->
+                <div class="input-group">
+                    <label for="horas-extras-50" class="block text-sm font-medium text-gray-700">Horas Extras al 50% No Abonadas (TOTAL)</label>
+                    <input type="number" id="horas-extras-50" value="0" min="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required>
+                    <p class="text-xs text-gray-500 mt-1">Suma de horas extras del 50% (lunes a sábado 13:00) en el período reclamado.</p>
+                </div>
+
+                <!-- Horas Extras 100% -->
+                <div class="input-group">
+                    <label for="horas-extras-100" class="block text-sm font-medium text-gray-700">Horas Extras al 100% No Abonadas (TOTAL)</label>
+                    <input type="number" id="horas-extras-100" value="0" min="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required>
+                    <p class="text-xs text-gray-500 mt-1">Suma de horas extras del 100% (sábados post 13:00, domingos) en el período reclamado.</p>
+                </div>
+
+                <!-- Feriados Trabajados (Manual) -->
+                <div class="input-group">
+                    <label for="feriados-trabajados" class="block text-sm font-medium text-gray-700">Feriados Trabajados y NO Abonados (Cantidad)</label>
+                    <input type="number" id="feriados-trabajados" value="0" min="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required>
+                    <p class="text-xs text-gray-500 mt-1">Cantidad total de feriados trabajados y no abonados en el período reclamado.</p>
+                </div>
+
+            </div>
+
+            <button onclick="calculateSalaryDifferences()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-200 mt-6 shadow-lg">
+                CALCULAR DIFERENCIAS SALARIALES Y CONTINUAR →
+            </button>
+
+            <!-- Display Results -->
+            <div id="diferencias-results" class="mt-8 p-4 bg-gray-100 rounded-lg hidden">
+                <h3 class="text-xl font-semibold mb-4 text-gray-700">Resultado de la Deuda Salarial Total</h3>
+                <div class="flex justify-between items-center py-2 border-b">
+                    <span class="text-sm font-medium text-gray-600">Monto Total de Diferencias Reclamadas (24 meses)</span>
+                    <span id="resultado-diferencias" class="text-lg font-bold text-red-600">$ 0.00</span>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">Este monto se trasladará a la Pestaña 2 para su inclusión en la Liquidación Final.</p>
+            </div>
+        </div>
+
+        <!-- TAB: 2. Liquidación Final (Indemnización y Multas) -->
+        <div id="indemnizacion-tab" class="tab-content bg-white p-6 rounded-xl shadow-lg border border-gray-200 hidden">
+            <h2 class="text-2xl font-semibold mb-6 border-b pb-2 text-gray-700">2. Liquidación Final (Indemnización, Multas, Intereses)</h2>
+            <p class="mb-4 text-sm text-gray-600">Calcula la liquidación final, incluyendo las multas e intereses basados en la LCT.</p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Data Input Fields -->
+                <div class="input-group">
+                    <label for="fecha-ingreso" class="block text-sm font-medium text-gray-700">Fecha de Ingreso</label>
+                    <input type="date" id="fecha-ingreso" value="2022-01-01" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" required>
+                </div>
+                <div class="input-group">
+                    <label for="fecha-egreso" class="block text-sm font-medium text-gray-700">Fecha de Egreso / Fecha de Liquidación</label>
+                    <input type="date" id="fecha-egreso" value="2024-01-01" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" required>
+                </div>
+                <div class="input-group">
+                    <label for="mrmnyh-sueldo" class="block text-sm font-medium text-gray-700">MRMNyH (Art. 245) - Sueldo Base</label>
+                    <input type="number" id="mrmnyh-sueldo" placeholder="Sueldo más alto del último año" onchange="saveBasicState()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" required>
+                </div>
+                <div class="input-group">
+                    <label for="tope-salarial" class="block text-sm font-medium text-gray-700">Tope Salarial CCT (Art. 245)</label>
+                    <input type="number" id="tope-salarial" placeholder="Tope Salarial o Sueldo si es igual" onchange="saveBasicState()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" required>
+                </div>
+
+                <!-- Nuevo Campo para Diferencias Salariales -->
+                <div class="input-group md:col-span-2">
+                    <label for="deuda-diferencias" class="block text-sm font-medium text-red-700">Deuda por Diferencias Salariales (Horas, etc.)</label>
+                    <input type="number" id="deuda-diferencias" value="0" class="mt-1 block w-full rounded-md border-red-400 shadow-sm p-2 border bg-red-50 text-red-800 font-bold" readonly>
+                    <p class="text-xs text-gray-500 mt-1">Este valor se carga automáticamente desde la Pestaña 1.</p>
+                </div>
+
+                <div class="input-group md:col-span-2 border-t pt-4">
+                    <h3 class="text-lg font-semibold mb-4 text-gray-700">Multas e Intereses</h3>
+                    <!-- Multa Art. 132 bis LCT -->
+                    <div class="flex items-center mb-2">
+                        <input id="multa-132bis" type="checkbox" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <label for="multa-132bis" class="ml-2 block text-sm font-medium text-gray-700">Multa Art. 132 bis LCT (Duplicación por falta de aportes)</label>
+                    </div>
+
+                    <!-- Intereses Moratorios -->
+                    <div class="flex items-center space-x-4 mt-4">
+                        <label for="interes-anual" class="text-sm font-medium text-gray-700">Tasa de Interés Moratorio Anual (ej: 30%)</label>
+                        <input type="number" id="interes-anual" value="0" min="0" max="100" class="w-20 rounded-md border-gray-300 shadow-sm p-2 border text-right">
+                        <span class="text-sm">%</span>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Se aplica sobre el Total Bruto sin Multas, multiplicado por los años de antigüedad (simulación de intereses judiciales).</p>
+                </div>
+
+            </div>
+
+            <button onclick="calculateSeverance()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-200 mt-6 shadow-lg">
+                CALCULAR LIQUIDACIÓN FINAL
+            </button>
+
+            <!-- Results Section -->
+            <div id="indemnizacion-results" class="mt-8 p-6 bg-gray-50 rounded-xl border border-gray-300 hidden">
+                <h3 class="text-xl font-bold mb-4 text-blue-600">RESULTADO DE LA LIQUIDACIÓN</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between font-medium text-gray-700 py-1">
+                        <span>Antigüedad (Años y Meses)</span>
+                        <span id="res-antiguedad">0 años, 0 meses</span>
+                    </div>
+                    <div class="flex justify-between font-medium text-gray-700 py-1 border-t pt-2">
+                        <span>Base de Cálculo Art. 245 (Tope Salarial vs. MRMNyH)</span>
+                        <span id="res-base-calculo">$ 0.00</span>
+                    </div>
+
+                    <!-- Rubros Indemnizatorios -->
+                    <div class="bg-blue-100 p-3 rounded-lg space-y-2">
+                        <h4 class="text-md font-semibold text-blue-800">Indemnización Base</h4>
+                        <div class="flex justify-between">
+                            <span class="text-sm">Indemnización por Antigüedad (Art. 245)</span>
+                            <span id="res-antiguedad-monto">$ 0.00</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-sm">Indemnización por Preaviso (con SAC y Vacaciones)</span>
+                            <span id="res-preaviso-monto">$ 0.00</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-sm">Integración Mes Despido (Días / 30)</span>
+                            <span id="res-integracion-monto">$ 0.00</span>
+                        </div>
+                    </div>
+
+                    <!-- Rubros Adicionales/Deuda -->
+                    <div class="bg-yellow-100 p-3 rounded-lg space-y-2">
+                        <h4 class="text-md font-semibold text-yellow-800">Deudas y Otros Rubros</h4>
+                        <div class="flex justify-between">
+                            <span class="text-sm">Vacaciones No Gozadas (Días Proporcionales)</span>
+                            <span id="res-vacaciones-monto">$ 0.00</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-sm">SAC Proporcional sobre Haberes</span>
+                            <span id="res-sac-proporcional">$ 0.00</span>
+                        </div>
+                        <div class="flex justify-between font-bold text-red-800">
+                            <span class="text-sm">Deuda por Diferencias Salariales (Horas, Feriados)</span>
+                            <span id="res-diferencias-deuda">$ 0.00</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Subtotal y Multas -->
+                    <div class="border-t pt-4 space-y-2">
+                        <div class="flex justify-between font-bold text-gray-800">
+                            <span>SUBTOTAL BRUTO SIN MULTAS</span>
+                            <span id="res-subtotal-bruto">$ 0.00</span>
+                        </div>
+
+                        <h4 class="text-md font-semibold text-red-800 pt-2">Multas LCT</h4>
+                        <div class="flex justify-between">
+                            <span class="text-sm">Multa Art. 2 Ley 25.323 (50% sobre Indemnización Base)</span>
+                            <span id="res-multa-2">$ 0.00</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-sm">Multa Art. 80 LCT (3 x MRMNyH)</span>
+                            <span id="res-multa-80">$ 0.00</span>
+                        </div>
+                        <div id="res-multa-132bis-row" class="flex justify-between hidden">
+                            <span class="text-sm font-semibold text-red-900">Multa Art. 132 bis LCT (Duplicación por aportes)</span>
+                            <span id="res-multa-132bis-monto" class="font-semibold text-red-900">$ 0.00</span>
+                        </div>
+                    </div>
+
+                    <!-- Intereses y Total Final -->
+                    <div class="border-t border-b py-4 mt-4 space-y-2">
+                         <div class="flex justify-between font-bold text-green-700">
+                            <span>Intereses Moratorios Aplicados</span>
+                            <span id="res-intereses">$ 0.00</span>
+                        </div>
+                        <div class="flex justify-between text-xl font-extrabold text-blue-700">
+                            <span>TOTAL ESTIMADO FINAL RECLAMABLE</span>
+                            <span id="res-total-final">$ 0.00</span>
+                        </div>
+                    </div>
+                </div>
+                <p class="text-xs text-gray-500 mt-4">NOTA: Este total es una estimación. Los intereses y la aplicación de multas deben ser confirmados por un profesional.</p>
+                <button onclick="generatePDF()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200 mt-4 shadow-md">
+                    GENERAR INFORME PDF
+                </button>
+            </div>
+        </div>
+
+        <!-- TAB: 3. Guía de Uso y Fundamentos -->
+        <div id="guia-uso-tab" class="tab-content bg-white p-6 rounded-xl shadow-lg border border-gray-200 hidden">
+            <h2 class="text-2xl font-semibold mb-6 border-b pb-2 text-gray-700">3. Guía de Uso y Fundamentos Legales</h2>
+            <div class="space-y-6 text-gray-700">
+                <section>
+                    <h3 class="text-xl font-bold text-blue-600 mb-2">Paso a Paso para la Liquidación</h3>
+                    <ol class="list-decimal list-inside space-y-2 ml-4">
+                        <li>**Pestaña 1 (Diferencias Salariales):** Ingrese el Sueldo Bruto Mensual (MRMNyH) y la **Base Horaria del CCT (ej: 200)**. Luego, ingrese el total de las horas extras, nocturnas y feriados no abonados en los últimos 24 meses. Presione **CALCULAR** para obtener la Deuda Salarial Total.</li>
+                        <li>**Pestaña 2 (Liquidación Final):** La deuda salarial se trasladará automáticamente al campo **"Deuda por Diferencias Salariales"**.</li>
+                        <li>Complete las fechas de ingreso/egreso, el MRMNyH para indemnización y el Tope Salarial.</li>
+                        <li>Seleccione las multas aplicables (Art. 2, Art. 80, Art. 132 bis) e ingrese una tasa de interés moratorio (sugerido por el profesional).</li>
+                        <li>Presione **CALCULAR LIQUIDACIÓN FINAL** para obtener el monto total reclamable.</li>
+                    </ol>
+                </section>
+
+                <section>
+                    <h3 class="text-xl font-bold text-blue-600 mb-2">Fundamento del Cálculo de Diferencias Salariales</h3>
+                    <p class="text-sm italic">La calculadora se basa en la Ley de Contrato de Trabajo (LCT) y asume que el empleador solo adeuda el recargo (la hora simple ya fue abonada).</p>
+                    
+                    <div class="space-y-3 mt-3 p-4 bg-gray-100 rounded-lg">
+                        <h4 class="font-semibold text-lg text-gray-800">Valor de la Hora Normal</h4>
+                        <p class="text-sm">La hora normal se calcula como: $ \text{MRMNyH} / \text{Base Horaria Mensual} $ (ej: 200). Este es el valor base para todos los recargos.</p>
+
+                        <h4 class="font-semibold text-lg text-gray-800">Horas Nocturnas (Art. 200 LCT)</h4>
+                        <p class="text-sm">Se considera trabajo nocturno el realizado entre las **21:00 y 06:00**. La jornada nocturna no puede exceder las **7 horas** (una hora menos que la diurna de 8 horas). Esto equivale a un recargo del **$13.33\%$** (se pagan $8$ horas por $7$ horas trabajadas).</p>
+                        <p class="text-sm font-semibold">Fórmula de la Diferencia Reclamada: $ \text{Valor Hora Normal} \times 0.1333 $</p>
+
+                        <h4 class="font-semibold text-lg text-gray-800">Horas Extras y Feriados (Art. 201 LCT)</h4>
+                        <ul class="list-disc list-inside ml-4 space-y-1 text-sm">
+                            <li>**Horas Extras 50%:** Aplica para días comunes (lunes a sábado 13:00). La diferencia reclamada es el recargo del $50\%$. Fórmula: $ \text{Valor Hora Normal} \times 0.50 $</li>
+                            <li>**Horas Extras 100%:** Aplica para feriados, domingos o sábados después de las 13:00. La diferencia reclamada es el recargo del $100\%$. Fórmula: $ \text{Valor Hora Normal} \times 1.00 $</li>
+                            <li>**Feriados No Abonados:** Aplica para el día feriado trabajado y no liquidado correctamente (pago del 100% adicional). Fórmula: $ \text{Valor Hora Normal} \times 1.00 $</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section>
+                    <h3 class="text-xl font-bold text-blue-600 mb-2">Fundamento de Multas Adicionales</h3>
+                    <ul class="list-disc list-inside space-y-2 ml-4">
+                        <li>**Multa Art. 2 Ley 25.323 (50%):** Se aplica sobre las indemnizaciones por antigüedad, preaviso e integración del mes de despido cuando el trabajador se ve obligado a iniciar acciones judiciales para cobrarlas.</li>
+                        <li>**Multa Art. 80 LCT (3 x MRMNyH):** Se aplica cuando el empleador no entrega al trabajador los certificados de trabajo/aportes (Art. 80 LCT) al momento de extinguirse la relación.</li>
+                        <li>**Multa Art. 132 bis LCT (Duplicación):** Si el empleador retuvo los aportes previsionales o sindicales del sueldo del trabajador y no los depositó, las indemnizaciones se duplican (indemnización por antigüedad, preaviso, e integración del mes de despido).</li>
+                    </ul>
+                </section>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Custom Modal for Alerts/Errors (Replaces alert()) -->
+    <div id="custom-modal" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center hidden">
+        <div class="bg-white p-6 rounded-lg shadow-2xl max-w-sm w-full">
+            <h3 id="modal-title" class="text-xl font-bold mb-4 text-red-600">Error</h3>
+            <p id="modal-message" class="text-gray-700 mb-6">Mensaje de error o alerta.</p>
+            <button onclick="hideModal()" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700">Aceptar</button>
+        </div>
+    </div>
+
+
+    <!-- MAIN JAVASCRIPT LOGIC -->
+    <script type="text/javascript">
+        // Global utility function to format currency
+        const formatter = new Intl.NumberFormat('es-AR', {
+            style: 'currency',
+            currency: 'ARS',
+            minimumFractionDigits: 2,
+        });
+
+        // Function to switch tabs
+        window.changeTab = (tabName) => {
+            const tabs = ['diferencias-salariales', 'indemnizacion', 'guia-uso'];
+            tabs.forEach(tab => {
+                document.getElementById(`${tab}-tab`).classList.add('hidden');
+                document.getElementById(`tab-btn-${tab}`).classList.remove('active');
+                document.getElementById(`tab-btn-${tab}`).classList.remove('bg-blue-600', 'text-white');
+                document.getElementById(`tab-btn-${tab}`).classList.add('text-gray-600');
+            });
+
+            document.getElementById(`${tabName}-tab`).classList.remove('hidden');
+            document.getElementById(`tab-btn-${tabName}`).classList.add('active', 'bg-blue-600', 'text-white');
+            document.getElementById(`tab-btn-${tabName}`).classList.remove('text-gray-600');
         };
-        
-        // --- CÁLCULO DE DIFERENCIAS SALARIALES ---
-        const calculateSalaryDifferences = () => {
-            const sueldoBrutoMensual = parseFloat(document.getElementById('sueldo-mensual').value) || 0;
-            const mesesAReclamar = parseInt(document.getElementById('meses-reclamar').value) || 0;
+
+        // Function to calculate the difference in hours between two times
+        function calculateHoursDifference(start, end) {
+            const startParts = start.split(':').map(Number);
+            const endParts = end.split(':').map(Number);
+
+            const startDate = new Date(0, 0, 0, startParts[0], startParts[1]);
+            let endDate = new Date(0, 0, 0, endParts[0], endParts[1]);
+
+            // If end time is earlier than start time, it means the shift crosses midnight
+            if (endDate <= startDate) {
+                endDate.setDate(endDate.getDate() + 1); // Add one day
+            }
+
+            return (endDate - startDate) / (1000 * 60 * 60); // Difference in hours
+        }
+
+        /**
+         * --------------------------------------------------------
+         * PESTAÑA 1: CALCULADORA DE DIFERENCIAS SALARIALES
+         * --------------------------------------------------------
+         */
+        window.calculateSalaryDifferences = () => {
+            const sueldoBrutoMensual = parseFloat(document.getElementById('sueldo-bruto-mes').value || 0);
+            const mesesReclamar = parseInt(document.getElementById('meses-reclamar').value || 0);
             const horaEntrada = document.getElementById('hora-entrada').value;
             const horaSalida = document.getElementById('hora-salida').value;
-            const feriadosTrabajados = parseInt(document.getElementById('feriados-trabajados').value) || 0;
-            const horasExtrasNormales = parseFloat(document.getElementById('horas-extras-normales').value) || 0;
-            const horasExtrasFeriado = parseFloat(document.getElementById('horas-extras-feriado').value) || 0;
+            const horasExtras50 = parseFloat(document.getElementById('horas-extras-50').value || 0);
+            const horasExtras100 = parseFloat(document.getElementById('horas-extras-100').value || 0);
+            const feriadosTrabajados = parseInt(document.getElementById('feriados-trabajados').value || 0);
+            const baseHorariaCCT = parseInt(document.getElementById('base-horaria').value || 200); // NEW INPUT
 
-
-            const resultDiv = document.getElementById('result-diferencias');
-
-            if (sueldoBrutoMensual <= 0 || mesesAReclamar <= 0 || !horaEntrada || !horaSalida) {
-                resultDiv.innerHTML = '<p class="text-red-500 font-bold">Por favor, complete todos los campos requeridos para el cálculo de Diferencias Salariales.</p>';
+            if (!sueldoBrutoMensual || !mesesReclamar || mesesReclamar > 24 || baseHorariaCCT < 168) {
+                showModal('Datos Incompletos', 'Por favor, ingrese un Sueldo Bruto válido, la cantidad de meses (máx. 24) y una Base Horaria del CCT (mín. 168).');
                 return;
             }
 
-            // Cálculo del valor de la hora normal (simplificado a 200 horas/mes)
-            const valorHoraNormal = sueldoBrutoMensual / 200; 
+            // 1. CÁLCULO DE VALOR DE HORA NORMAL
+            // Se utiliza la Base Horaria del CCT ingresada por el usuario (ej: 200, 192)
+            const valorHoraNormal = sueldoBrutoMensual / baseHorariaCCT;
 
-            // --- LÓGICA DE HORAS NOCTURNAS (21:00 a 06:00) ---
-            const NOCHE_INICIO = 21;
-            const NOCHE_FIN = 6;
-            const ADICIONAL_NOCTURNO = 0.1333; // 13.33%
+            // 2. CÁLCULO DE HORAS NOCTURNAS (21:00 a 06:00)
+            const NOCTURNO_START = 21;
+            const NOCTURNO_END = 6;
+            const ADICIONAL_NOCTURNO = 0.1333; // 13.33% diferencia a reclamar
 
-            const entrada = parseInt(horaEntrada.split(':')[0]);
-            const salida = parseInt(horaSalida.split(':')[0]);
-            const jornadaCompleta = (salida > entrada) ? (salida - entrada) : (24 - entrada + salida);
-
-            // Calcular horas nocturnas por día
             let horasNocturnasPorDia = 0;
+            let totalHorasTrabajadas = calculateHoursDifference(horaEntrada, horaSalida);
 
-            for (let i = 0; i < jornadaCompleta; i++) {
-                let horaActual = (entrada + i) % 24;
+            // Simplificación: Asumimos que el horario se repite 25 días/mes (o 21 días laborables, dependiendo del CCT)
+            // Para el cálculo de diferencia salarial, tomaremos 21 días laborales/mes (Lunes a Viernes + 1 Sábado).
+            const DIAS_LABORABLES_MES = 21;
 
-                // Si la hora actual cae entre 21:00 y 05:59 (nocturna)
-                if (horaActual >= NOCHE_INICIO || horaActual < NOCHE_FIN) {
+            // Logic to check how many hours fall within the 21:00 - 06:00 range
+            for (let h = Math.floor(totalHorasTrabajadas); h > 0; h--) {
+                let currentHour = new Date(0, 0, 0, new Date(0, 0, 0, parseFloat(horaEntrada.split(':')[0]) + h - 1, parseFloat(horaEntrada.split(':')[1])).getHours(), 0);
+
+                let hourOfDay = currentHour.getHours();
+
+                if (hourOfDay >= NOCTURNO_START || hourOfDay < NOCTURNO_END) {
                     horasNocturnasPorDia++;
                 }
             }
 
-            // Horas diurnas
-            const horasDiurnas = jornadaCompleta - horasNocturnasPorDia;
-
-            // La ley establece que 8 horas nocturnas equivalen a 7 horas de trabajo efectivo.
-            // Reducción de jornada nocturna (13.33% de reducción en tiempo, o 13.33% de adicional)
-            const factorReduccionJornada = 8 / 7.5; // Aproximación
-
-            // En términos de pago: Se pagan 8 horas de trabajo, pero solo 7.5 son efectivas (13.33% más).
-            const horasAbonarPorAdicional = horasNocturnasPorDia * ADICIONAL_NOCTURNO;
-
-            // Total de horas que la empresa no abonó al 13.33% (solo por adicional, no por reducción efectiva)
-            const diferenciaHorasNocturnas = horasNocturnasPorDia * ADICIONAL_NOCTURNO; // Horas a pagar al valor de la hora normal
-
-            // --- CÁLCULO TOTAL ---
+            const totalHorasNocturnasPeriodo = horasNocturnasPorDia * DIAS_LABORABLES_MES * mesesReclamar;
             
-            // 1. Diferencia por Adicional Nocturno
-            const totalAdicionalNocturno = diferenciaHorasNocturnas * valorHoraNormal * 30 * mesesAReclamar; // 30 días promedio de trabajo por mes
+            // Diferencia por Horas Nocturnas (solo el adicional)
+            const diferenciaNocturna = totalHorasNocturnasPeriodo * valorHoraNormal * ADICIONAL_NOCTURNO;
+            
+            // 3. CÁLCULO DE HORAS EXTRAS Y FERIADOS (Diferencia a reclamar)
 
-            // 2. Horas Extras 50% (Normales)
-            const valorExtra50 = valorHoraNormal * 1.5;
-            const totalExtras50 = horasExtrasNormales * valorExtra50 * mesesAReclamar;
+            // Horas Extras 50% (Diferencia = 50% del valor hora)
+            const diferenciaExtras50 = horasExtras50 * valorHoraNormal * 0.50;
 
-            // 3. Horas Extras Feriados/100%
-            const valorExtra100 = valorHoraNormal * 2.0;
-            // Usamos las horas Extras Feriado ingresadas, más la conversión de Feriados Trabajados (asumiendo 8h por feriado)
-            const horasFeriadoBase = feriadosTrabajados * 8; 
-            const totalExtras100 = (horasExtrasFeriado + horasFeriadoBase) * valorExtra100 * mesesAReclamar;
+            // Horas Extras 100% (Diferencia = 100% del valor hora)
+            const diferenciaExtras100 = horasExtras100 * valorHoraNormal * 1.00;
+
+            // Feriados no abonados (Diferencia = 100% del valor hora, asumiendo que el día de descanso fue pago simple)
+            // Asumimos 8 horas por feriado
+            const diferenciaFeriados = feriadosTrabajados * 8 * valorHoraNormal * 1.00;
 
 
-            const totalDiferenciasSalariales = totalAdicionalNocturno + totalExtras50 + totalExtras100;
-            currentDifferencesResult = {
-                valorHoraNormal,
-                horasNocturnasPorDia: horasNocturnasPorDia,
-                totalAdicionalNocturno,
-                totalExtras50,
-                totalExtras100,
-                totalDiferenciasSalariales
-            };
+            // 4. TOTALIZACIÓN
+            const totalDiferenciasSalariales = diferenciaNocturna + diferenciaExtras50 + diferenciaExtras100 + diferenciaFeriados;
+            
+            // Update Global State
+            window.currentDifferencesResult = totalDiferenciasSalariales;
 
-            // Mostrar Resultados
-            resultDiv.innerHTML = `
-                <div class="space-y-3">
-                    <h3 class="text-xl font-bold text-blue-700 border-b pb-2">Resumen de Diferencias Salariales (${mesesAReclamar} meses)</h3>
-                    <div class="flex justify-between pb-1 text-sm text-gray-700">
-                        <span class="font-medium">Valor Hora Normal (Est.):</span>
-                        <span>${formatCurrency(valorHoraNormal)}</span>
-                    </div>
-                    <div class="flex justify-between pb-1 text-sm text-gray-700">
-                        <span class="font-medium">Horas Nocturnas Est. por día:</span>
-                        <span>${horasNocturnasPorDia} horas</span>
-                    </div>
-                    <hr class="my-3 border-gray-200">
+            // Display Results in Tab 1
+            document.getElementById('resultado-diferencias').textContent = formatter.format(totalDiferenciasSalariales);
+            document.getElementById('diferencias-results').classList.remove('hidden');
 
-                    <!-- Rubros Calculados -->
-                    <div class="flex justify-between text-gray-700">
-                        <span class="font-bold">Diferencia por Adicional Nocturno (13.33%):</span>
-                        <span class="font-bold text-green-600">${formatCurrency(totalAdicionalNocturno)}</span>
-                    </div>
-                    <div class="flex justify-between text-gray-700">
-                        <span class="font-bold">Diferencia por Horas Extras 50%:</span>
-                        <span class="font-bold text-green-600">${formatCurrency(totalExtras50)}</span>
-                    </div>
-                    <div class="flex justify-between text-gray-700">
-                        <span class="font-bold">Diferencia por Horas Extras/Feriados 100%:</span>
-                        <span class="font-bold text-green-600">${formatCurrency(totalExtras100)}</span>
-                    </div>
-                    
-                    <hr class="my-4 border-gray-500">
-                    <div class="flex justify-between items-center bg-green-100 p-3 rounded-lg">
-                        <span class="text-2xl font-extrabold text-green-800">TOTAL DIFERENCIAS:</span>
-                        <span class="text-3xl font-extrabold text-green-800">${formatCurrency(totalDiferenciasSalariales)}</span>
-                    </div>
-                    <p class="text-xs text-gray-500 mt-2">Este cálculo es una estimación. Se asume un promedio de 30 días trabajados por mes.</p>
-                </div>
-            `;
-
+            // Pass result to Tab 2 and switch
+            document.getElementById('deuda-diferencias').value = totalDiferenciasSalariales.toFixed(2);
+            
+            // Switch to Liquidación Final tab
+            showModal('Cálculo Realizado', `La Deuda Salarial de ${formatter.format(totalDiferenciasSalariales)} ha sido calculada y transferida a la Pestaña 2 para finalizar la liquidación.`);
+            changeTab('indemnizacion');
         };
 
-        const saveLiquidation = async () => { /* ... lógica de guardado ... */ };
-        const loadHistory = () => { /* ... lógica de historial ... */ };
-        const viewDetails = async (docId) => { /* ... lógica de detalles ... */ };
 
-        // --- GENERACIÓN DE PDF ---
-        const generatePDF = async () => {
-            const PDFConstructor = window.jsPDF && window.jsPDF.jsPDF; // Referencia segura
-            
-            if (!currentLiquidationResult) {
-                showModal("Error", "Debe calcular la liquidación primero.", "Presione el botón 'CALCULAR LIQUIDACIÓN' antes de intentar generar el PDF.");
+        /**
+         * --------------------------------------------------------
+         * PESTAÑA 2: CALCULADORA DE INDEMNIZACIONES FINALES
+         * --------------------------------------------------------
+         */
+        window.calculateSeverance = () => {
+            const fechaIngreso = document.getElementById('fecha-ingreso').value;
+            const fechaEgreso = document.getElementById('fecha-egreso').value;
+            let mrmnyh = parseFloat(document.getElementById('mrmnyh-sueldo').value || 0);
+            let topeSalarial = parseFloat(document.getElementById('tope-salarial').value || 0);
+            const deudaDiferencias = parseFloat(document.getElementById('deuda-diferencias').value || 0);
+            const multa132bis = document.getElementById('multa-132bis').checked;
+            const interesAnual = parseFloat(document.getElementById('interes-anual').value || 0) / 100;
+
+            if (!fechaIngreso || !fechaEgreso || !mrmnyh) {
+                showModal('Datos Incompletos', 'Por favor, complete las Fechas de Ingreso/Egreso y el MRMNyH para calcular la liquidación.');
                 return;
             }
 
-            if (!PDFConstructor) {
-                showModal("Error", "Librería de PDF no disponible", "La librería de generación de PDF (jsPDF) no se cargó correctamente. Intente recargar la página o verificar su conexión.", 'error');
+            const start = new Date(fechaIngreso + "T00:00:00");
+            const end = new Date(fechaEgreso + "T00:00:00");
+
+            if (start >= end) {
+                showModal('Error de Fecha', 'La fecha de egreso debe ser posterior a la fecha de ingreso.');
                 return;
             }
 
-            const doc = new PDFConstructor();
-            const result = currentLiquidationResult;
+            // A. CÁLCULO DE ANTIGÜEDAD Y BASE DE CÁLCULO
+            const diffTime = Math.abs(end - start);
+            const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
+            const years = Math.floor(diffYears);
+            const months = Math.floor((diffYears - years) * 12);
 
-            // ... (Resto del código de generación de PDF) ...
+            // Para Indemnización por Antigüedad: Art. 245
+            let antiguedadAnios = years;
+            // Si la antigüedad es 3 meses o más en el último año, se redondea al año superior.
+            if (months >= 3) {
+                antiguedadAnios += 1;
+            } else if (antiguedadAnios === 0 && months < 3) {
+                 antiguedadAnios = 1; // Mínimo 1 año de indemnización
+            }
+
+            // Determinar la Base de Cálculo (BCC)
+            let baseCalculoArt245 = mrmnyh;
+            if (topeSalarial > 0) {
+                // El BCC es el menor entre el MRMNyH y el Tope Salarial del CCT (o 3 veces el tope si es menor)
+                baseCalculoArt245 = Math.min(mrmnyh, topeSalarial); // Simplificado
+            }
+
+            // B. RUBROS INDEMNIZATORIOS BASE
+            let indemAntiguedad = baseCalculoArt245 * antiguedadAnios;
+
+            // Preaviso (Art. 232 LCT) - Mínimo 1 mes si antig. es < 5 años, 2 meses si es >= 5 años
+            let mesesPreaviso = antiguedadAnios < 5 ? 1 : 2;
+            let indemPreaviso = baseCalculoArt245 * mesesPreaviso;
+
+            // Integración Mes Despido (Art. 233 LCT)
+            const daysInMonth = 30;
+            const dayOfEgress = end.getDate();
+            const daysToIntegrate = daysInMonth - dayOfEgress;
+            let indemIntegracion = (baseCalculoArt245 / daysInMonth) * daysToIntegrate;
+            if (indemIntegracion < 0) indemIntegracion = 0; // Si egresa el 30, es 0
+
+            // C. OTROS RUBROS
+            // Vacaciones No Gozadas (Art. 150/156 LCT)
+            const daysWorkedThisYear = Math.ceil((end - new Date(end.getFullYear(), 0, 1)) / (1000 * 60 * 60 * 24));
+            const daysEntitlement = Math.min(28, 14 + Math.floor(years / 5) * 7); // Mín 14, +7 cada 5 años (simplif.)
+            const proportionalVacationDays = (daysWorkedThisYear / 365) * daysEntitlement;
+            let indemVacaciones = (baseCalculoArt245 / 25) * proportionalVacationDays;
+
+            // SAC Proporcional (Art. 121 LCT)
+            const monthsWorkedThisSemester = end.getMonth() >= 6 ? (end.getMonth() - 5) : (end.getMonth() + 1);
+            let indemSacProporcional = (mrmnyh * monthsWorkedThisSemester) / 12;
+
+            // SAC sobre Indemnización por Preaviso y Integración (se pagan en la integración)
+            // Preaviso y Integración generan SAC proporcional y Vacaciones, ya que se consideran tiempo trabajado
+            let sacPreaviso = indemPreaviso * 0.0833; // 8.33% de SAC sobre Preaviso
+            let vacPreaviso = indemPreaviso * 0.0417; // 4.17% de Vacaciones sobre Preaviso (simplificado)
+            indemPreaviso += sacPreaviso + vacPreaviso;
+
+
+            // D. SUBTOTAL BRUTO
+            const subTotalBase = indemAntiguedad + indemPreaviso + indemIntegracion + indemVacaciones + indemSacProporcional;
+            let subTotalConDeuda = subTotalBase + deudaDiferencias;
+
+            // E. MULTAS
+            let multasTotal = 0;
+            let multa25323Art2 = subTotalBase * 0.50; // 50% sobre Indemnización Base
+            let multa25323Art80 = mrmnyh * 3; // 3 sueldos por falta de entrega de certificado
+            let multa132bisMonto = 0;
+
+            if (multa132bis) {
+                // Duplica la Indemnización Base (Antigüedad + Preaviso + Integración)
+                multa132bisMonto = indemAntiguedad + indemPreaviso + indemIntegracion;
+                multasTotal += multa132bisMonto;
+                document.getElementById('res-multa-132bis-row').classList.remove('hidden');
+            } else {
+                document.getElementById('res-multa-132bis-row').classList.add('hidden');
+            }
             
-            // Guardar en DB y descargar
-            saveLiquidation(); 
-            
-            const workerName = document.getElementById('worker-name').value;
-            const safeWorkerName = workerName.trim().replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_') || 'Trabajador';
-            doc.save(`Liquidacion_${safeWorkerName}_${new Date().toISOString().substring(0, 10)}.pdf`);
+            multasTotal += multa25323Art2 + multa25323Art80;
+
+            // F. INTERESES MORATORIOS
+            let totalIntereses = 0;
+            if (interesAnual > 0) {
+                // Cálculo simple: (Total Bruto sin Multas) * Tasa * Años de Antigüedad
+                totalIntereses = subTotalConDeuda * interesAnual * years;
+            }
+
+            // G. TOTAL FINAL RECLAMABLE
+            const totalFinal = subTotalConDeuda + multasTotal + totalIntereses;
+
+
+            // H. MOSTRAR RESULTADOS
+            document.getElementById('res-antiguedad').textContent = `${years} años, ${months} meses`;
+            document.getElementById('res-base-calculo').textContent = formatter.format(baseCalculoArt245);
+            document.getElementById('res-antiguedad-monto').textContent = formatter.format(indemAntiguedad);
+            document.getElementById('res-preaviso-monto').textContent = formatter.format(indemPreaviso);
+            document.getElementById('res-integracion-monto').textContent = formatter.format(indemIntegracion);
+            document.getElementById('res-vacaciones-monto').textContent = formatter.format(indemVacaciones);
+            document.getElementById('res-sac-proporcional').textContent = formatter.format(indemSacProporcional);
+            document.getElementById('res-diferencias-deuda').textContent = formatter.format(deudaDiferencias);
+            document.getElementById('res-subtotal-bruto').textContent = formatter.format(subTotalConDeuda);
+            document.getElementById('res-multa-2').textContent = formatter.format(multa25323Art2);
+            document.getElementById('res-multa-80').textContent = formatter.format(multa25323Art80);
+            document.getElementById('res-multa-132bis-monto').textContent = formatter.format(multa132bisMonto);
+            document.getElementById('res-intereses').textContent = formatter.format(totalIntereses);
+            document.getElementById('res-total-final').textContent = formatter.format(totalFinal);
+
+            document.getElementById('indemnizacion-results').classList.remove('hidden');
+
+            // Save state of MRMNyH and Tope Salarial
+            window.saveBasicState();
         };
 
+        /**
+         * --------------------------------------------------------
+         * GENERACIÓN DE PDF
+         * --------------------------------------------------------
+         */
+        window.generatePDF = async () => {
+            // Cargar jsPDF solo cuando se presiona el botón, usando el constructor global expuesto por el CDN.
+            if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined') {
+                 showModal('Error de PDF', 'Librería de PDF no disponible. Por favor, intente recargar la página.');
+                 return;
+            }
 
-        // --- UI Initialization ---
-        const updateCurrentDate = () => {
-            const today = new Date().toISOString().substring(0, 10);
-            document.getElementById('fecha-egreso').value = today;
-        };
-        
-        window.onload = () => {
-            handleAuth();
-            updateCurrentDate();
-        };
+            const jsPDF = window.jspdf.jsPDF;
+            const doc = new jsPDF();
 
-        window.calculateSeverance = calculateSeverance;
-        window.calculateSalaryDifferences = calculateSalaryDifferences;
-        window.generatePDF = generatePDF;
-        window.viewDetails = viewDetails;
-        window.loadHistory = loadHistory;
-        window.handleLogout = handleLogout;
-        window.changeTab = changeTab; // Exponer la función de cambio de pestaña
-        // ... (el resto del código de la aplicación y estilos) ...
-    </script>
-    <!-- ... (El resto del HEAD y BODY del HTML) ... -->
-    <style>
-        .chart-container { position: relative; width: 100%; max-width: 800px; margin-left: auto; margin-right: auto; height: 350px; max-height: 450px; }
-        body { font-family: 'Inter', sans-serif; background-color: #F8F8F8; color: #1F2937; }
-        .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); padding: 1.5rem; margin-bottom: 1.5rem; }
-        .btn-primary { background-color: #EF4444; color: white; padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-weight: 600; transition: background-color 0.2s; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
-        .btn-primary:hover { background-color: #DC2626; }
-        .btn-secondary { background-color: #3B82F6; color: white; padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-weight: 600; transition: background-color 0.2s; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
-        .btn-secondary:hover { background-color: #2563EB; }
-        .input-style { padding: 0.75rem; border: 1px solid #D1D5DB; border-radius: 0.5rem; width: 100%; transition: border-color 0.2s; }
-        .input-style:focus { border-color: #3B82F6; outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25); }
-        th { background-color: #F3F4F6; text-align: left; font-weight: 600; color: #4B5563; border-bottom: 2px solid #E5E7EB; }
-        .table-container { overflow-x: auto; border: 1px solid #E5E7EB; border-radius: 0.5rem; }
-    </style>
-</head>
-<body class="min-h-screen">
+            const totalFinal = document.getElementById('res-total-final').textContent;
+            const baseCalculo = document.getElementById('res-base-calculo').textContent;
+            const antiguedad = document.getElementById('res-antiguedad').textContent;
+            const fechaIngreso = document.getElementById('fecha-ingreso').value;
+            const fechaEgreso = document.getElementById('fecha-egreso').value;
 
-    <div id="loading-spinner" class="fixed inset-0 flex items-center justify-center bg-gray-500 bg-opacity-75 z-50 hidden">
-        <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-red-600"></div>
-        <p class="ml-4 text-white text-lg">Cargando...</p>
-    </div>
-
-    <div id="auth-screen" class="min-h-screen flex items-center justify-center p-4">
-        <p class="text-xl font-medium text-gray-700">Iniciando sesión anónima para acceder a la aplicación...</p>
-    </div>
-
-    <div id="main-app" class="hidden">
-        
-        <header class="bg-white shadow-lg sticky top-0 z-10">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-                <h1 class="text-2xl font-bold text-red-600">Calculadora Laboral Argentina</h1>
-                <div class="flex items-center space-x-4">
-                    <span id="user-info" class="text-gray-600 text-sm truncate">Cargando ID...</span>
-                    <button onclick="handleLogout()" class="bg-red-500 text-white px-3 py-1 rounded-md hover:bg-red-700 transition">Cerrar Sesión</button>
-                </div>
-            </div>
-        </header>
-
-        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-
-            <!-- Navegación por Pestañas -->
-            <div class="flex mb-6 border-b border-gray-200">
-                <button id="btn-indemnizacion" onclick="changeTab('indemnizacion')" class="px-6 py-3 text-sm font-semibold transition duration-150 border-r border-gray-200 rounded-tl-lg bg-red-600 text-white">
-                    1. Liquidación Final (Indemnización)
-                </button>
-                <button id="btn-diferencias" onclick="changeTab('diferencias')" class="px-6 py-3 text-sm font-semibold text-red-600 transition duration-150 rounded-tr-lg hover:bg-gray-100">
-                    2. Diferencias Salariales (Horas)
-                </button>
-            </div>
+            // Datos de la Pestaña 1
+            const totalDiferencias = document.getElementById('resultado-diferencias').textContent;
+            const sueldoBaseDiff = document.getElementById('sueldo-bruto-mes').value;
+            const baseHorariaCCT = document.getElementById('base-horaria').value;
+            const mesesReclamo = document.getElementById('meses-reclamar').value;
             
-            <!-- PESTAÑA 1: CÁLCULO DE INDEMNIZACIÓN -->
-            <div id="indemnizacion-tab" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <!-- Columna de Ingreso de Datos (Izquierda) -->
-                <div class="lg:col-span-1">
-                    <div class="card">
-                        <h2 class="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">Datos del Trabajador</h2>
-                        <form id="liquidation-form" onsubmit="event.preventDefault(); calculateSeverance()">
-                            
-                            <div class="mb-4">
-                                <label for="worker-name" class="block text-sm font-medium text-gray-700 mb-1">Nombre y Apellido</label>
-                                <input type="text" id="worker-name" required class="input-style" placeholder="Ej: Juan Pérez">
-                            </div>
-                            <div class="grid grid-cols-2 gap-4 mb-4">
-                                <div>
-                                    <label for="dni" class="block text-sm font-medium text-gray-700 mb-1">DNI</label>
-                                    <input type="text" id="dni" class="input-style" placeholder="Ej: 12345678">
-                                </div>
-                                <div>
-                                    <label for="cuit" class="block text-sm font-medium text-gray-700 mb-1">CUIT</label>
-                                    <input type="text" id="cuit" class="input-style" placeholder="Ej: 20-12345678-9">
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-2 gap-4 mb-6">
-                                <div>
-                                    <label for="cct" class="block text-sm font-medium text-gray-700 mb-1">CCT Aplicado</label>
-                                    <input type="text" id="cct" class="input-style" placeholder="Ej: 130/75 (Comercio)">
-                                </div>
-                                <div>
-                                    <label for="profesion" class="block text-sm font-medium text-gray-700 mb-1">Profesión</label>
-                                    <input type="text" id="profesion" class="input-style" placeholder="Ej: Administrativo">
-                                </div>
-                            </div>
 
-                            <h2 class="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">Datos de Liquidación</h2>
-                            
-                            <div class="grid grid-cols-2 gap-4 mb-4">
-                                <div>
-                                    <label for="fecha-ingreso" class="block text-sm font-medium text-gray-700 mb-1">Fecha de Ingreso</label>
-                                    <input type="date" id="fecha-ingreso" required class="input-style">
-                                </div>
-                                <div>
-                                    <label for="fecha-egreso" class="block text-sm font-medium text-gray-700 mb-1">Fecha de Egreso</label>
-                                    <input type="date" id="fecha-egreso" required class="input-style">
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-2 gap-4 mb-4">
-                                <div>
-                                    <label for="sueldo" class="block text-sm font-medium text-gray-700 mb-1">MRMNyH (Sueldo)</label>
-                                    <input type="number" id="sueldo" required class="input-style" placeholder="Sueldo Bruto" min="0">
-                                </div>
-                                <div>
-                                    <label for="tope-salarial" class="block text-sm font-medium text-gray-700 mb-1">Tope Salarial (Art. 245)</label>
-                                    <input type="number" id="tope-salarial" class="input-style" placeholder="Opcional: Dejar vacío si es igual al sueldo" min="0">
-                                </div>
-                            </div>
-                            <div class="mb-6">
-                                <label for="jornada" class="block text-sm font-medium text-gray-700 mb-1">Jornada (Horas Diarias)</label>
-                                <input type="number" id="jornada" required class="input-style" placeholder="Ej: 8 (Jornada Completa)" min="1" max="8">
-                                <p class="text-xs text-gray-500 mt-1">Si la jornada es reducida, el total se ajusta proporcionalmente.</p>
-                            </div>
-                            
-                            <h2 class="text-xl font-bold mb-4 text-gray-800 border-b pb-2">Selección de Multas y Sanciones</h2>
-                            
-                            <div class="space-y-2 mb-8">
-                                <div class="mb-4">
-                                    <input type="checkbox" id="fine-25323-2" class="rounded text-red-600 focus:ring-red-500">
-                                    <label for="fine-25323-2" class="ml-2 text-sm font-medium text-gray-700">Art. 2 Ley 25.323 (50% de Indemnizaciones)</label>
-                                </div>
-                                <div class="mb-4">
-                                    <input type="checkbox" id="fine-art-80" class="rounded text-red-600 focus:ring-red-500">
-                                    <label for="fine-art-80" class="ml-2 text-sm font-medium text-gray-700">Art. 80 LCT (3 x MRMNyH - Certificados)</label>
-                                </div>
-                                <div class="mb-4">
-                                    <input type="checkbox" id="fine-25323-1" class="rounded text-red-600 focus:ring-red-500">
-                                    <label for="fine-25323-1" class="ml-2 text-sm font-medium text-gray-700">Art. 1 Ley 25.323 (10% - Relación no registrada - Placeholder)</label>
-                                </div>
-                            </div>
+            let y = 15;
+            doc.setFontSize(18);
+            doc.text("INFORME DE LIQUIDACIÓN LABORAL (ESTIMATIVO)", 105, y, null, null, "center");
+            y += 10;
+            doc.line(20, y, 190, y);
+            y += 8;
 
-                            <button type="submit" class="w-full btn-primary transition transform hover:scale-[1.01] active:scale-[0.99]">
-                                CALCULAR LIQUIDACIÓN
-                            </button>
-                        </form>
-                    </div>
-                </div>
+            doc.setFontSize(12);
+            doc.setFont(undefined, 'bold');
+            doc.text("DATOS PRINCIPALES:", 20, y);
+            y += 6;
+            doc.setFont(undefined, 'normal');
+            doc.text(`Fecha de Ingreso: ${fechaIngreso}`, 20, y);
+            doc.text(`Fecha de Egreso: ${fechaEgreso}`, 110, y);
+            y += 6;
+            doc.text(`Antigüedad Calculada: ${antiguedad}`, 20, y);
+            doc.text(`Base de Cálculo (MRMNyH o Tope): ${baseCalculo}`, 110, y);
+            y += 10;
 
-                <!-- Columna de Resultados e Historial (Derecha) -->
-                <div class="lg:col-span-2">
-                    
-                    <!-- Resultados -->
-                    <div class="card bg-gray-50">
-                        <h2 class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2">Resultados</h2>
-                        <div id="result-summary" class="min-h-[200px] flex items-center justify-center text-gray-500">
-                            Presione "CALCULAR LIQUIDACIÓN" para ver el detalle.
-                        </div>
-                        <button id="pdf-button" onclick="generatePDF()" 
-                                class="w-full mt-4 btn-secondary opacity-50 pointer-events-none transition transform hover:scale-[1.01] active:scale-[0.99]">
-                            GENERAR PDF Y GUARDAR
-                        </button>
-                    </div>
+            // Detalles de Diferencias Salariales
+            doc.setFont(undefined, 'bold');
+            doc.text("DETALLE DE DEUDA SALARIAL (Pestaña 1):", 20, y);
+            y += 6;
+            doc.setFont(undefined, 'normal');
+            doc.text(`Sueldo Base (MRMNyH): ${formatter.format(sueldoBaseDiff)}`, 20, y);
+            doc.text(`Base Horaria CCT: ${baseHorariaCCT} horas`, 110, y);
+            y += 6;
+            doc.text(`Meses Reclamados: ${mesesReclamo}`, 20, y);
+            doc.text(`TOTAL DEUDA SALARIAL: ${totalDiferencias}`, 110, y);
+            y += 10;
 
-                    <!-- Historial -->
-                    <div class="card mt-8">
-                        <h2 class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2">Historial de Liquidaciones</h2>
-                        <div class="table-container">
-                            <table class="min-w-full divide-y divide-gray-200">
-                                <thead>
-                                    <tr>
-                                        <th class="p-3 text-sm">Trabajador (DNI)</th>
-                                        <th class="p-3 text-sm">Fecha Egreso</th>
-                                        <th class="p-3 text-sm">Total Estimado</th>
-                                        <th class="p-3 text-sm text-right">Acciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="history-table-body" class="bg-white divide-y divide-gray-200">
-                                    <!-- Filas de historial se insertan aquí -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
 
-                </div>
-            </div>
+            // Resumen de Rubros
+            doc.setFont(undefined, 'bold');
+            doc.text("RESUMEN DE INDEMNIZACIONES Y MULTAS:", 20, y);
+            y += 8;
 
-            <!-- PESTAÑA 2: CÁLCULO DE DIFERENCIAS SALARIALES -->
-            <div id="diferencias-salariales-tab" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-8">
+            const results = document.getElementById('indemnizacion-results').querySelectorAll('.flex.justify-between');
+            
+            results.forEach(row => {
+                const label = row.querySelector('span:first-child').textContent.trim();
+                const value = row.querySelector('span:last-child').textContent.trim();
                 
-                <!-- Columna de Ingreso de Datos -->
-                <div class="lg:col-span-1">
-                    <div class="card">
-                        <h2 class="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">Base de Cálculo</h2>
-                        <form onsubmit="event.preventDefault(); calculateSalaryDifferences()">
-                            
-                            <div class="mb-4">
-                                <label for="sueldo-mensual" class="block text-sm font-medium text-gray-700 mb-1">Sueldo Bruto Mensual (MRMNyH)</label>
-                                <input type="number" id="sueldo-mensual" required class="input-style" placeholder="Sueldo base para calcular la hora" min="0">
-                            </div>
-                            <div class="mb-6">
-                                <label for="meses-reclamar" class="block text-sm font-medium text-gray-700 mb-1">Meses a Reclamar (Máx. 24)</label>
-                                <input type="number" id="meses-reclamar" required class="input-style" placeholder="Ej: 24" min="1" max="24" value="24">
-                            </div>
+                if (label && value && y < 270) {
+                    doc.setFont(undefined, 'normal');
+                    if (label.includes("SUBTOTAL") || label.includes("TOTAL ESTIMADO")) {
+                        doc.setFont(undefined, 'bold');
+                        doc.line(20, y - 2, 190, y - 2);
+                    }
+                    doc.text(label, 20, y);
+                    doc.text(value, 190, y, null, null, "right");
+                    y += 5;
+                }
+            });
 
-                            <h2 class="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">Patrón de Horarios</h2>
-                            <p class="text-xs text-gray-500 mb-4">Ingrese su horario habitual para calcular automáticamente las horas nocturnas (21:00 a 06:00).</p>
+            // Total Final
+            y += 5;
+            doc.line(20, y, 190, y);
+            y += 6;
+            doc.setFontSize(14);
+            doc.setFont(undefined, 'bold');
+            doc.text("TOTAL ESTIMADO FINAL:", 20, y);
+            doc.text(totalFinal, 190, y, null, null, "right");
 
-                            <div class="grid grid-cols-2 gap-4 mb-6">
-                                <div>
-                                    <label for="hora-entrada" class="block text-sm font-medium text-gray-700 mb-1">Hora de Entrada (24h)</label>
-                                    <input type="time" id="hora-entrada" required class="input-style" value="14:00">
-                                </div>
-                                <div>
-                                    <label for="hora-salida" class="block text-sm font-medium text-gray-700 mb-1">Hora de Salida (24h)</label>
-                                    <input type="time" id="hora-salida" required class="input-style" value="23:00">
-                                </div>
-                            </div>
-                            
-                            <h2 class="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">Horas Adicionales No Abonadas</h2>
-                            <p class="text-xs text-gray-500 mb-4">Ingrese los totales aproximados en el período de reclamo (ej: 24 meses).</p>
+            y += 10;
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'italic');
+            doc.text("NOTA: Este informe es una estimación basada en la Ley de Contrato de Trabajo (LCT) y no reemplaza la consulta con un abogado laboralista.", 20, y);
 
-                            <div class="mb-4">
-                                <label for="horas-extras-normales" class="block text-sm font-medium text-gray-700 mb-1">Horas Extras al 50% (No abonadas)</label>
-                                <input type="number" id="horas-extras-normales" class="input-style" placeholder="Total de horas extras simples" min="0">
-                                <p class="text-xs text-gray-500 mt-1">Horas en días normales y sábados (hasta 13hs).</p>
-                            </div>
-                            <div class="mb-4">
-                                <label for="horas-extras-feriado" class="block text-sm font-medium text-gray-700 mb-1">Horas Extras al 100% (No abonadas)</label>
-                                <input type="number" id="horas-extras-feriado" class="input-style" placeholder="Total de horas extras dobles" min="0">
-                                <p class="text-xs text-gray-500 mt-1">Horas en días de descanso o sábados después de 13hs.</p>
-                            </div>
-                            <div class="mb-8">
-                                <label for="feriados-trabajados" class="block text-sm font-medium text-gray-700 mb-1">Feriados (Días completos no abonados)</label>
-                                <input type="number" id="feriados-trabajados" class="input-style" placeholder="Cantidad de días feriados completos trabajados" min="0">
-                                <p class="text-xs text-gray-500 mt-1">Asumiremos 8 horas por cada día feriado.</p>
-                            </div>
-                            
+            doc.save("Liquidacion_Laboral_Estimativa.pdf");
+        };
 
-                            <button type="submit" class="w-full btn-primary transition transform hover:scale-[1.01] active:scale-[0.99] bg-green-600 hover:bg-green-700">
-                                CALCULAR DIFERENCIAS SALARIALES
-                            </button>
-                        </form>
-                    </div>
-                </div>
+        // Initialize App on load
+        window.onload = function() {
+            // Attach the modal hide function to the button
+            document.querySelector('#custom-modal button').onclick = window.hideModal;
+            
+            // Set default date for egreso (today) and ingreso (2 years ago)
+            const today = new Date();
+            const twoYearsAgo = new Date();
+            twoYearsAgo.setFullYear(today.getFullYear() - 2);
+            document.getElementById('fecha-egreso').value = today.toISOString().substring(0, 10);
+            document.getElementById('fecha-ingreso').value = twoYearsAgo.toISOString().substring(0, 10);
 
-                <!-- Columna de Resultados -->
-                <div class="lg:col-span-2">
-                    <div class="card bg-gray-50">
-                        <h2 class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2">Resultado de Diferencias</h2>
-                        <div id="result-diferencias" class="min-h-[200px] flex items-center justify-center text-gray-500">
-                            Ingrese los datos y presione "CALCULAR DIFERENCIAS SALARIALES".
-                        </div>
-                        <button id="pdf-diferencias-button" disabled
-                                class="w-full mt-4 btn-secondary opacity-50 pointer-events-none transition transform hover:scale-[1.01] active:scale-[0.99]">
-                            GENERAR INFORME (Próximamente)
-                        </button>
-                    </div>
-                    
-                </div>
-            </div>
-
-
-        </main>
-    </div>
-
-    <!-- Modal General -->
-    <div id="modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg transform transition-all duration-300 scale-100">
-            <h3 id="modal-title" class="text-xl font-bold mb-4 text-red-600"></h3>
-            <div id="modal-content" class="text-gray-700 mb-6 max-h-96 overflow-y-auto"></div>
-            <button onclick="hideModal()" class="w-full py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700">Aceptar</button>
-        </div>
-    </div>
+            // Set default time (9 to 5)
+            document.getElementById('hora-entrada').value = "09:00";
+            document.getElementById('hora-salida').value = "17:00";
+            
+            // Initial tab selection
+            changeTab('diferencias-salariales');
+        };
+    </script>
+    
+    <!-- jsPDF CDN MUST BE LOADED GLOBALLY FOR THE ASYNC IMPORT TO WORK CONSISTENTLY -->
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
 </body>
 </html>
+
