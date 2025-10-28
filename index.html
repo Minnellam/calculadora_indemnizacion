@@ -203,8 +203,8 @@
                         document.getElementById('multa-132bis').checked = data.multa132bisChecked === true;
                         document.getElementById('multa-24013-8').checked = data.multa24013Art8Checked === true;
                         document.getElementById('multa-24013-15').checked = data.multa24013Art15Checked === true;
-                        document.getElementById('multa-24013-10').checked = data.multa24013Art10Checked === true; // Nueva multa
-                        document.getElementById('multa-25323-1').checked = data.multa25323Art1Checked === true; // Nueva multa
+                        document.getElementById('multa-24013-10').checked = data.multa24013Art10Checked === true; 
+                        document.getElementById('multa-25323-1').checked = data.multa25323Art1Checked === true; 
 
 
                         // Load data for Tab 1
@@ -242,8 +242,8 @@
                         multa132bisChecked: document.getElementById('multa-132bis').checked,
                         multa24013Art8Checked: document.getElementById('multa-24013-8').checked,
                         multa24013Art15Checked: document.getElementById('multa-24013-15').checked,
-                        multa24013Art10Checked: document.getElementById('multa-24013-10').checked, // Nueva multa
-                        multa25323Art1Checked: document.getElementById('multa-25323-1').checked, // Nueva multa
+                        multa24013Art10Checked: document.getElementById('multa-24013-10').checked, 
+                        multa25323Art1Checked: document.getElementById('multa-25323-1').checked, 
 
                         // Tab 1 Base Data
                         sueldoCctMes: document.getElementById('sueldo-cct-mes').value,
@@ -541,19 +541,19 @@
                             <span id="res-multa-80">$ 0.00</span>
                         </div>
                         <div id="res-multa-132bis-row" class="flex justify-between hidden">
-                            <span class="text-sm font-semibold text-[var(--primary-color)]">Multa Art. 132 bis LCT (Duplicación por aportes)</span>
+                            <span class="text-sm font-semibold text-[var(--primary-color)]">Multa Art. 132 bis LCT (Duplicación por falta de aportes)</span>
                             <span id="res-multa-132bis-monto" class="font-semibold text-[var(--primary-color)]">$ 0.00</span>
                         </div>
                         
                         <!-- FILA NUEVA: Multa 24.013 Art. 8 -->
                         <div id="res-multa-24013-8-row" class="flex justify-between hidden">
-                            <span class="text-sm font-semibold text-green-600">Multa Ley 24.013, Art. 8 (1/4 de la Deuda Salarial)</span>
+                            <span class="text-sm font-semibold text-green-600">Multa Ley 24.013, Art. 8 (1/4 de la Deuda Salarial por falta de registro)</span>
                             <span id="res-multa-24013-8-monto" class="font-semibold text-green-600">$ 0.00</span>
                         </div>
                         
                         <!-- FILA NUEVA: Multa 24.013 Art. 10 -->
                         <div id="res-multa-24013-10-row" class="flex justify-between hidden">
-                            <span class="text-sm font-semibold text-orange-600">Multa Ley 24.013, Art. 10 (1/4 de la Deuda Salarial)</span>
+                            <span class="text-sm font-semibold text-orange-600">Multa Ley 24.013, Art. 10 (1/4 de la Deuda Salarial por fecha de ingreso)</span>
                             <span id="res-multa-24013-10-monto" class="font-semibold text-orange-600">$ 0.00</span>
                         </div>
                         
@@ -781,8 +781,8 @@
             const multa132bis = document.getElementById('multa-132bis').checked;
             const multa24013Art8 = document.getElementById('multa-24013-8').checked;
             const multa24013Art15 = document.getElementById('multa-24013-15').checked;
-            const multa24013Art10 = document.getElementById('multa-24013-10').checked; // Nueva multa
-            const multa25323Art1 = document.getElementById('multa-25323-1').checked; // Nueva multa
+            const multa24013Art10 = document.getElementById('multa-24013-10').checked; 
+            const multa25323Art1 = document.getElementById('multa-25323-1').checked; 
             
             const interesAnual = parseFloat(document.getElementById('interes-anual').value || 0) / 100;
 
@@ -847,15 +847,21 @@
 
             // C. OTROS RUBROS
             // Vacaciones No Gozadas (Art. 150/156 LCT)
-            const daysWorkedThisYear = Math.ceil((end - new Date(end.getFullYear(), 0, 1)) / (1000 * 60 * 60 * 24));
+            // Días trabajados desde el inicio del año calendario (1 de enero) hasta la fecha de egreso
+            const startOfYear = new Date(end.getFullYear(), 0, 1);
+            const daysWorkedThisYear = Math.floor((end - startOfYear) / (1000 * 60 * 60 * 24)) + 1; // +1 para incluir el día de egreso
+            const DAYS_IN_YEAR = 365;
             
             let daysEntitlement = 14;
             if (years >= 5 && years < 10) daysEntitlement = 21;
             else if (years >= 10 && years < 20) daysEntitlement = 28;
             else if (years >= 20) daysEntitlement = 35;
 
-            const proportionalVacationDays = (daysWorkedThisYear / 365) * daysEntitlement;
-            let indemVacaciones = (baseCalculoArt245 / 25) * proportionalVacationDays; // Indemnizatory divisor is 25
+            // Cálculo proporcional: (Días trabajados / Días del año) * Días que le corresponden
+            const proportionalVacationDays = (daysWorkedThisYear / DAYS_IN_YEAR) * daysEntitlement;
+            
+            // Valor de cada día de vacaciones: (MRMNyH / 25)
+            let indemVacaciones = (baseCalculoArt245 / 25) * proportionalVacationDays; 
 
             // SAC Proporcional (Art. 121 LCT)
             const currentMonth = end.getMonth();
@@ -881,8 +887,8 @@
             let multa132bisMonto = 0;
             let multa24013Art8Monto = 0;
             let multa24013Art15Monto = 0;
-            let multa24013Art10Monto = 0; // Nueva multa
-            let multa25323Art1Monto = 0; // Nueva multa
+            let multa24013Art10Monto = 0; 
+            let multa25323Art1Monto = 0; 
 
             // Monto de Indemnización Base para duplicación
             const montoIndemnizacionBase = indemAntiguedad + indemPreaviso + indemIntegracion;
@@ -896,7 +902,7 @@
                 document.getElementById('res-multa-2-row').classList.add('hidden');
             }
             
-            // NUEVA Multa Art. 1 Ley 25.323 (Duplicación por falta de pago)
+            // Multa Art. 1 Ley 25.323 (Duplicación por falta de pago)
             if (multa25323Art1) {
                 multa25323Art1Monto = montoIndemnizacionBase;
                 multasTotal += multa25323Art1Monto;
@@ -935,7 +941,7 @@
                 document.getElementById('res-multa-24013-8-row').classList.add('hidden');
             }
             
-            // NUEVA Multa Ley 24.013, Art. 10 (1/4 de la deuda salarial)
+            // Multa Ley 24.013, Art. 10 (1/4 de la deuda salarial)
             if (multa24013Art10) {
                 multa24013Art10Monto = deudaDiferencias * 0.25;
                 multasTotal += multa24013Art10Monto;
@@ -1066,10 +1072,10 @@
                     rubros.push({ name: 'Multa Art. 132 bis LCT (Duplicación)', value: String(document.getElementById('res-multa-132bis-monto').textContent) });
                 }
                 if (!document.getElementById('res-multa-24013-8-row').classList.contains('hidden')) {
-                    rubros.push({ name: 'Multa Ley 24.013, Art. 8 (1/4 de la Deuda Salarial)', value: String(document.getElementById('res-multa-24013-8-monto').textContent) });
+                    rubros.push({ name: 'Multa Ley 24.013, Art. 8 (1/4 de la Deuda Salarial por falta de registro)', value: String(document.getElementById('res-multa-24013-8-monto').textContent) });
                 }
                 if (!document.getElementById('res-multa-24013-10-row').classList.contains('hidden')) {
-                    rubros.push({ name: 'Multa Ley 24.013, Art. 10 (1/4 de la Deuda Salarial)', value: String(document.getElementById('res-multa-24013-10-monto').textContent) });
+                    rubros.push({ name: 'Multa Ley 24.013, Art. 10 (1/4 de la Deuda Salarial por fecha de ingreso)', value: String(document.getElementById('res-multa-24013-10-monto').textContent) });
                 }
                 if (!document.getElementById('res-multa-24013-15-row').classList.contains('hidden')) {
                     rubros.push({ name: 'Multa Ley 24.013, Art. 15 (Duplicación Indemnización Base)', value: String(document.getElementById('res-multa-24013-15-monto').textContent) });
